@@ -1,0 +1,13 @@
+== LOCAL ==
+[ServoShutter]
+name = ServoShutter
+class = misc.ServoShutter.ShutterWorker
+req_port = 7042
+pub_port = 7043
+
+== NORMAL ==
+[ServoShutter]
+class = misc.ServoShutter.Shutter
+req_port = 7042
+pub_port = 7043
+enabled = true
