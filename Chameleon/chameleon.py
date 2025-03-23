@@ -1,25 +1,44 @@
-from devices.zeromq_device import DeviceWorker, DeviceOverZeroMQ, remote, include_remote_methods
-from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import (
-    QPushButton, QMessageBox, QDialog,
-    QApplication, QWidget, QMainWindow,
-    QVBoxLayout, QHBoxLayout, QLineEdit,
-    QLabel, QInputDialog
-)
-from PyQt5.QtGui import (QFont, QColor)
-import scipy.optimize
+# -*- coding: utf-8 -*-
 import numpy as np
+import scipy.optimize
 from devices import H_C, N_AIR
+from devices.zeromq_device import (
+    DeviceOverZeroMQ,
+    DeviceWorker,
+    include_remote_methods,
+    remote,
+)
+from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDockWidget,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLCDNumber,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSlider,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class ChameleonWorker(DeviceWorker):
     '''The class contains every methods needed to talk to the motor'''
-
-
+    
+   
     def __init__(self, port, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.port = port
-
+        
     def init_device(self):
         from pyvisa import ResourceManager
         rm = ResourceManager()
@@ -27,18 +46,15 @@ class ChameleonWorker(DeviceWorker):
         self.handle.baud_rate = 19200
         self.handle.write_termination = '\r\n'
         self.handle.read_termination = '\r\n'
-
+        
         print("Checking communication: ")
         self.query("?L") # would raise an exception if communication failed
         print("OK")
 
+        
     def __del__(self):
-        try:
-            if hasattr(self, 'ser') and self.ser:
-                self.ser.close() #serial port close
-        except:
-            pass
-
+        self.ser.close() #serial port close
+        
     def status(self):
         d = super().status()
         d["lasing"] = self.is_lasing()
@@ -47,10 +63,6 @@ class ChameleonWorker(DeviceWorker):
                 "wavelength": self.wavelength(),
                 "power": self.power_tunable(),
                 "shutter": self.is_shutter_open_tunable()
-            }
-        d["fixed"] = \
-            {
-                "shutter": self.is_shutter_open_fixed()
             }
         return d
 
@@ -62,22 +74,22 @@ class ChameleonWorker(DeviceWorker):
         res = res[len(command):].strip()
         return res
 
-
+        
     @remote
     def wavelength(self):
         return int(self.query('?WV'))
-
+        
     @remote
     def set_wavelength(self, nm):
         self.query(f"WV={int(nm)}")
-
+        
     @remote
     def open_shutter_tunable(self, ok=True):
         if ok:
             self.query("SVAR=1")
         else:
             self.close_shutter_tunable()
-
+    
     @remote
     def close_shutter_tunable(self):
         self.query("SVAR=0")
@@ -85,14 +97,14 @@ class ChameleonWorker(DeviceWorker):
     @remote
     def is_shutter_open_tunable(self):
         return int(self.query("?SVAR")) == 1
-
+        
     @remote
     def open_shutter_fixed(self, ok=True):
         if ok:
             self.query("SFIXED=1")
         else:
             self.close_shutter_fixed()
-
+    
     @remote
     def close_shutter_fixed(self):
         self.query("SFIXED=0")
@@ -104,469 +116,386 @@ class ChameleonWorker(DeviceWorker):
     @remote
     def is_lasing(self):
         return int(self.query("?L")) == 1
-
+    
     @remote
     def set_laser_state(self, state):
         if state:
             self.query("L=1")
         else:
             self.query("L=0")
-
+            
     @remote
     def power_tunable(self):
         return int(self.query("?PVAR"))
-
-    @remote
-    def get_wavelength(self):
-        """Alias for wavelength() to maintain backward compatibility"""
-        return self.wavelength()
-
+    
+    
 @include_remote_methods(ChameleonWorker)
-class Chameleon(DeviceOverZeroMQ):
+class Chameleon(DeviceOverZeroMQ):  
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
+        # Default values for GUI display
+        self.current_wavelength = 0
+        self.fixed_power = 0.0
+        self.tunable_power = 0.0
+        self.fixed_shutter_open = False
+        self.tunable_shutter_open = False
+                             
     def createDock(self, parentWidget, menu=None):
-        """ Enhanced dock widget for Chameleon laser control """
-        dock = QtWidgets.QDockWidget("Chameleon Laser", parentWidget)
+        """ Function for integration in GUI app. Creates a comprehensive
+        GUI panel for the Chameleon laser control. """
+        dock = QtWidgets.QDockWidget("Chameleon laser", parentWidget)
         widget = QtWidgets.QWidget(parentWidget)
-
-        # Main layout
-        main_layout = QtWidgets.QVBoxLayout()
-
-        # Status section with indicator lights
-        status_layout = QtWidgets.QHBoxLayout()
-
-        # Lasing status indicator
-        lasing_layout = QtWidgets.QVBoxLayout()
-        self.lasing_indicator = QtWidgets.QLabel()
-        self.lasing_indicator.setFixedSize(15, 15)
-        self.lasing_indicator.setStyleSheet("background-color: gray; border-radius: 7px;")
-        lasing_label = QtWidgets.QLabel("Lasing")
-        lasing_label.setAlignment(QtCore.Qt.AlignCenter)
-        lasing_layout.addWidget(self.lasing_indicator, 0, QtCore.Qt.AlignCenter)
-        lasing_layout.addWidget(lasing_label)
-
-        # Toggle laser button
-        self.laser_toggle = QtWidgets.QPushButton("OFF")
-        self.laser_toggle.setFixedWidth(60)
-        self.laser_toggle.setCheckable(True)
-        self.laser_toggle.clicked.connect(self.toggle_laser)
-        lasing_layout.addWidget(self.laser_toggle, 0, QtCore.Qt.AlignCenter)
-        status_layout.addLayout(lasing_layout)
-
-        # Vertical separator
-        line = QtWidgets.QFrame()
-        line.setFrameShape(QtWidgets.QFrame.VLine)
-        line.setFrameShadow(QtWidgets.QFrame.Sunken)
-        status_layout.addWidget(line)
-
-        # Tunable beam section
-        tunable_layout = QtWidgets.QVBoxLayout()
-        tunable_label = QtWidgets.QLabel("Tunable Beam")
-        tunable_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.tunable_indicator = QtWidgets.QLabel()
-        self.tunable_indicator.setFixedSize(15, 15)
-        self.tunable_indicator.setStyleSheet("background-color: gray; border-radius: 7px;")
-        tunable_layout.addWidget(self.tunable_indicator, 0, QtCore.Qt.AlignCenter)
-        tunable_layout.addWidget(tunable_label)
-
-        # Tunable shutter slider
-        self.tunable_shutter = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.tunable_shutter.setRange(0, 1)
-        self.tunable_shutter.setSingleStep(1)
-        self.tunable_shutter.setFixedWidth(50)
-        self.tunable_shutter.valueChanged.connect(self.toggle_tunable_shutter)
-        tunable_layout.addWidget(self.tunable_shutter, 0, QtCore.Qt.AlignCenter)
-        status_layout.addLayout(tunable_layout)
-
-        # Vertical separator
-        line2 = QtWidgets.QFrame()
-        line2.setFrameShape(QtWidgets.QFrame.VLine)
-        line2.setFrameShadow(QtWidgets.QFrame.Sunken)
-        status_layout.addWidget(line2)
-
-        # Fixed beam section
-        fixed_layout = QtWidgets.QVBoxLayout()
-        fixed_label = QtWidgets.QLabel("Fixed Beam")
-        fixed_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.fixed_indicator = QtWidgets.QLabel()
-        self.fixed_indicator.setFixedSize(15, 15)
-        self.fixed_indicator.setStyleSheet("background-color: gray; border-radius: 7px;")
-        fixed_layout.addWidget(self.fixed_indicator, 0, QtCore.Qt.AlignCenter)
-        fixed_layout.addWidget(fixed_label)
-
-        # Fixed shutter slider
-        self.fixed_shutter = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.fixed_shutter.setRange(0, 1)
-        self.fixed_shutter.setSingleStep(1)
-        self.fixed_shutter.setFixedWidth(50)
-        self.fixed_shutter.valueChanged.connect(self.toggle_fixed_shutter)
-        fixed_layout.addWidget(self.fixed_shutter, 0, QtCore.Qt.AlignCenter)
-        status_layout.addLayout(fixed_layout)
-
-        main_layout.addLayout(status_layout)
-
-        # Add separator
-        hline = QtWidgets.QFrame()
-        hline.setFrameShape(QtWidgets.QFrame.HLine)
-        hline.setFrameShadow(QtWidgets.QFrame.Sunken)
-        main_layout.addWidget(hline)
-
-        # Wavelength and energy information
-        param_layout = QtWidgets.QFormLayout()
-
-        # Wavelength display and control
-        wave_layout = QtWidgets.QHBoxLayout()
-        self.display_nm = QtWidgets.QLineEdit()
-        self.display_nm.setReadOnly(True)
-        self.display_nm.setFixedWidth(100)
-        wave_layout.addWidget(self.display_nm)
-
-        # Quick adjust buttons for wavelength
-        self.wave_down = QtWidgets.QPushButton("-")
-        self.wave_down.setFixedWidth(25)
-        self.wave_down.clicked.connect(lambda: self.adjust_wavelength(-1))
-        wave_layout.addWidget(self.wave_down)
-
-        self.wave_up = QtWidgets.QPushButton("+")
-        self.wave_up.setFixedWidth(25)
-        self.wave_up.clicked.connect(lambda: self.adjust_wavelength(1))
-        wave_layout.addWidget(self.wave_up)
-
-        param_layout.addRow("Wavelength (air):", wave_layout)
-
-        # Energy display
-        self.display_energy = QtWidgets.QLineEdit()
+        main_layout = QVBoxLayout()
+        
+        # ---- 1. Lasing Status and Powers Section ----
+        lasing_group = QGroupBox("Laser Status")
+        lasing_layout = QVBoxLayout()
+        
+        # Create separator function
+        def create_separator():
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setFrameShadow(QFrame.Sunken)
+            return line
+        
+        # Fixed beam status
+        fixed_status_layout = QHBoxLayout()
+        
+        # Indicator and label container
+        fixed_label_container = QHBoxLayout()
+        fixed_lasing_indicator = QLabel("⬤")
+        fixed_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
+        self.fixed_lasing_indicator = fixed_lasing_indicator
+        
+        fixed_status_label = QLabel("FIXED \t\t 1030 nm:")
+        fixed_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        fixed_status_label.setMinimumWidth(110)
+        fixed_status_label.setMaximumWidth(170)
+        
+        fixed_label_container.addWidget(fixed_lasing_indicator)
+        fixed_label_container.addWidget(fixed_status_label)
+        fixed_label_container.addStretch()
+        
+        # Power display container
+        power_display_container = QHBoxLayout()
+        self.fixed_power_display = QLCDNumber()
+        self.fixed_power_display.setDigitCount(5)
+        self.fixed_power_display.setSegmentStyle(QLCDNumber.Flat)
+        self.fixed_power_display.setStyleSheet("color: #00AAFF; background-color: black;")
+        self.fixed_power_display.setMinimumWidth(100)
+        self.fixed_power_display.display(self.fixed_power)
+        
+        power_unit_label = QLabel("mW")
+        power_unit_label.setStyleSheet("font-weight: bold;")
+        
+        power_display_container.addWidget(self.fixed_power_display)
+        power_display_container.addWidget(power_unit_label)
+        
+        fixed_status_layout.addLayout(fixed_label_container, 1)
+        fixed_status_layout.addLayout(power_display_container, 1)
+        lasing_layout.addLayout(fixed_status_layout)
+        
+        lasing_layout.addWidget(create_separator())
+        
+        # Tunable beam status
+        tunable_status_layout = QHBoxLayout()
+        
+        # Indicator and label container
+        tunable_label_container = QHBoxLayout()
+        tunable_lasing_indicator = QLabel("⬤")
+        tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
+        self.tunable_lasing_indicator = tunable_lasing_indicator
+        
+        self.tunable_status_label = QLabel(f"TUNABLE \t {self.current_wavelength} nm:")
+        self.tunable_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.tunable_status_label.setMinimumWidth(110)
+        self.tunable_status_label.setMaximumWidth(170)
+        
+        tunable_label_container.addWidget(tunable_lasing_indicator)
+        tunable_label_container.addWidget(self.tunable_status_label)
+        tunable_label_container.addStretch()
+        
+        # Power display container for tunable
+        tunable_power_container = QHBoxLayout()
+        self.tunable_power_display = QLCDNumber()
+        self.tunable_power_display.setDigitCount(5)
+        self.tunable_power_display.setSegmentStyle(QLCDNumber.Flat)
+        self.tunable_power_display.setStyleSheet("color: #00AAFF; background-color: black;")
+        self.tunable_power_display.setMinimumWidth(100)
+        self.tunable_power_display.display(self.tunable_power)
+        
+        power_unit_label2 = QLabel("mW")
+        power_unit_label2.setStyleSheet("font-weight: bold;")
+        
+        tunable_power_container.addWidget(self.tunable_power_display)
+        tunable_power_container.addWidget(power_unit_label2)
+        
+        tunable_status_layout.addLayout(tunable_label_container, 1)
+        tunable_status_layout.addLayout(tunable_power_container, 1)
+        lasing_layout.addLayout(tunable_status_layout)
+        
+        lasing_group.setLayout(lasing_layout)
+        main_layout.addWidget(lasing_group)
+        
+        # ---- 2. Shutter Control Section ----
+        shutter_group = QGroupBox("Shutter Control")
+        shutter_layout = QVBoxLayout()
+        
+        # Fixed beam shutter controls
+        fixed_layout = QHBoxLayout()
+        fixed_label = QLabel("FIXED:")
+        fixed_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.fixed_shutter_button = QPushButton("CLOSED")
+        self.fixed_shutter_button.setCheckable(True)
+        self.fixed_shutter_button.clicked.connect(self.toggle_fixed_shutter)
+        self.fixed_shutter_button.setStyleSheet("color: white; font-weight: bold; font-size: 14px; background-color: gray;")
+        self.fixed_shutter_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        fixed_layout.addWidget(fixed_label, 1)
+        fixed_layout.addWidget(self.fixed_shutter_button, 2)
+        
+        # Tunable beam shutter controls
+        tunable_layout = QHBoxLayout()
+        tunable_label = QLabel("TUNABLE:")
+        tunable_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.tunable_shutter_button = QPushButton("CLOSED")
+        self.tunable_shutter_button.setCheckable(True)
+        self.tunable_shutter_button.clicked.connect(self.toggle_tunable_shutter)
+        self.tunable_shutter_button.setStyleSheet("color: white; font-weight: bold; font-size: 14px; background-color: gray;")
+        self.tunable_shutter_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        tunable_layout.addWidget(tunable_label, 1)
+        tunable_layout.addWidget(self.tunable_shutter_button, 2)
+        
+        shutter_layout.addLayout(fixed_layout)
+        shutter_layout.addLayout(tunable_layout)
+        shutter_group.setLayout(shutter_layout)
+        main_layout.addWidget(shutter_group)
+        
+        # ---- 3. Wavelength Control Section ----
+        wavelength_group = QGroupBox("Wavelength Control")
+        wavelength_layout = QVBoxLayout()
+        
+        wavelength_layout.addWidget(QLabel("Set Wavelength (nm):"))
+        
+        # Input field and set button
+        input_layout = QHBoxLayout()
+        self.wavelength_input = QLineEdit()
+        self.wavelength_input.setPlaceholderText("Enter wavelength (680-900 nm)")
+        self.wavelength_input.returnPressed.connect(self.set_wavelength_from_input)
+        set_button = QPushButton("Set")
+        set_button.clicked.connect(self.set_wavelength_from_input)
+        input_layout.addWidget(self.wavelength_input, 3)
+        input_layout.addWidget(set_button, 1)
+        wavelength_layout.addLayout(input_layout)
+        
+        # Slider for wavelength (read-only indicator)
+        wavelength_layout.addWidget(QLabel("Current Wavelength:"))
+        self.wavelength_slider = QSlider(QtCore.Qt.Horizontal)
+        self.wavelength_slider.setMinimum(680)
+        self.wavelength_slider.setMaximum(900)
+        self.wavelength_slider.setValue(self.current_wavelength)
+        self.wavelength_slider.setEnabled(False)  # Make the slider inactive/read-only
+        
+        slider_layout = QHBoxLayout()
+        slider_layout.addWidget(QLabel("680 nm"))
+        slider_layout.addWidget(self.wavelength_slider)
+        slider_layout.addWidget(QLabel("900 nm"))
+        wavelength_layout.addLayout(slider_layout)
+        
+        # Preset buttons
+        button_layout = QHBoxLayout()
+        self.preset_680 = QPushButton("680 nm")
+        self.preset_750 = QPushButton("750 nm")
+        self.preset_800 = QPushButton("800 nm")
+        self.preset_680.clicked.connect(lambda: self.set_wavelength(680))
+        self.preset_750.clicked.connect(lambda: self.set_wavelength(750))
+        self.preset_800.clicked.connect(lambda: self.set_wavelength(800))
+        button_layout.addWidget(self.preset_680)
+        button_layout.addWidget(self.preset_750)
+        button_layout.addWidget(self.preset_800)
+        wavelength_layout.addWidget(QLabel("Presets:"))
+        wavelength_layout.addLayout(button_layout)
+        
+        # Add energy calculation field
+        energy_layout = QHBoxLayout()
+        self.display_energy = QLineEdit()
         self.display_energy.setReadOnly(True)
-        self.display_energy.setFixedWidth(100)
-        param_layout.addRow("Photon energy:", self.display_energy)
-
-        # Power display for tunable beam
-        self.display_power_tunable = QtWidgets.QLineEdit()
-        self.display_power_tunable.setReadOnly(True)
-        self.display_power_tunable.setFixedWidth(100)
-        param_layout.addRow("Tunable power:", self.display_power_tunable)
-
-        main_layout.addLayout(param_layout)
-
-        # Button row for additional functions
-        button_layout = QtWidgets.QHBoxLayout()
-
-        # Advanced controls button
-        advanced_button = QtWidgets.QPushButton("ADVANCED")
-        advanced_button.clicked.connect(self.show_advanced_controls)
-        button_layout.addWidget(advanced_button)
-
-        main_layout.addLayout(button_layout)
-
-        # Set main layout
+        energy_layout.addWidget(QLabel("Photon energy:"))
+        energy_layout.addWidget(self.display_energy)
+        wavelength_layout.addLayout(energy_layout)
+        
+        wavelength_group.setLayout(wavelength_layout)
+        main_layout.addWidget(wavelength_group)
+        
         widget.setLayout(main_layout)
         dock.setWidget(widget)
         dock.setAllowedAreas(QtCore.Qt.TopDockWidgetArea | QtCore.Qt.BottomDockWidgetArea)
         parentWidget.addDockWidget(QtCore.Qt.TopDockWidgetArea, dock)
-
         if menu:
             menu.addAction(dock.toggleViewAction())
-
-        # Initialize the widget operation
+            
+        # Initialize UI state based on device status
+        print("\t --INITIALIZING--")
+        self.update_ui_from_device()
+        print("\t --DONE--")
+            
+        # Following lines "turn on" the widget operation (from original code)
         self.createListenerThread(self.updateSlot)
-
-        # Setup mouse events for direct input
-        self.display_nm.mousePressEvent = self.on_click_nm
-        self.display_energy.mousePressEvent = self.on_click_energy
-
-    def on_click_nm(self, event):
-        """Handle mouse click on wavelength display"""
+    
+    def update_ui_from_device(self):
+        """Initialize the UI state from device status"""
         try:
-            if event.button() == 1:
-                current = self.wavelength()
-                d, okPressed = QtWidgets.QInputDialog.getDouble(
-                    self.display_nm.parent(),
-                    "Set wavelength",
-                    "Target wavelength (air) in nm:",
-                    current, 680, 900, 3)
-                if okPressed:
-                    self.set_wavelength(d)
-        except Exception as e:
-            print(f"Error setting wavelength: {e}")
+            # Update wavelength display and slider
+            wl = self.wavelength()
+            self.current_wavelength = wl
+            self.wavelength_slider.setValue(wl)
+            self.tunable_status_label.setText(f"TUNABLE {wl} nm:")
+            
+            # Update shutter status
+            self.fixed_shutter_open = self.is_shutter_open_fixed()
+            self.tunable_shutter_open = self.is_shutter_open_tunable()
+            self.update_fixed_shutter_ui()
+            self.update_tunable_shutter_ui()
+            
+            # Update lasing indicators
+            is_lasing = self.is_lasing()
+            if is_lasing:
+                if self.fixed_shutter_open:
+                    self.fixed_lasing_indicator.setStyleSheet("color: #FF0000; font-size: 20px;")
+                if self.tunable_shutter_open:
+                    self.tunable_lasing_indicator.setStyleSheet("color: #FF0000; font-size: 20px;")
+            
+            # Update power displays
+            if is_lasing:
+                self.fixed_power = 1500.0  # Estimated - would need actual power reading
+                self.fixed_power_display.display(self.fixed_power)
 
-    def on_click_energy(self, event):
-        """Handle mouse click on energy display"""
-        try:
-            if event.button() == 1:
-                current = H_C*N_AIR / self.wavelength()*1000
-                d, okPressed = QtWidgets.QInputDialog.getDouble(
-                    self.display_energy.parent(),
-                    "Set energy",
-                    "Target energy in meV:",
-                    current, 1300, 1900, 3)
-                if okPressed:
-                    self.set_wavelength(H_C*N_AIR*1000/ d)
+                self.tunable_power = self.power_tunable()
+                self.tunable_power_display.display(self.tunable_power)
+                
+            # Update energy display
+            self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/wl))
+            
         except Exception as e:
-            print(f"Error setting energy: {e}")
-
-    def adjust_wavelength(self, delta):
-        """Adjust wavelength by a small increment"""
-        try:
-            current = self.wavelength()
-            self.set_wavelength(current + delta)
-        except Exception as e:
-            print(f"Error adjusting wavelength: {e}")
-
-    def toggle_laser(self):
-        """Toggle the laser on/off state"""
-        try:
-            if self.laser_toggle.isChecked():
-                self.set_laser_state(True)
-                self.laser_toggle.setText("ON")
-            else:
-                self.set_laser_state(False)
-                self.laser_toggle.setText("OFF")
-        except Exception as e:
-            print(f"Error toggling laser: {e}")
-            # Reset button state if there was an error
-            self.laser_toggle.setChecked(self.is_lasing())
-
-    def toggle_tunable_shutter(self):
-        """Toggle the tunable beam shutter"""
-        try:
-            if self.tunable_shutter.value() == 1:
-                self.open_shutter_tunable(True)
-            else:
-                self.close_shutter_tunable()
-        except Exception as e:
-            print(f"Error toggling tunable shutter: {e}")
-            # Reset slider state if there was an error
-            self.tunable_shutter.setValue(1 if self.is_shutter_open_tunable() else 0)
-
-    def toggle_fixed_shutter(self):
-        """Toggle the fixed beam shutter"""
-        try:
-            if self.fixed_shutter.value() == 1:
-                self.open_shutter_fixed(True)
-            else:
-                self.close_shutter_fixed()
-        except Exception as e:
-            print(f"Error toggling fixed shutter: {e}")
-            # Reset slider state if there was an error
-            self.fixed_shutter.setValue(1 if self.is_shutter_open_fixed() else 0)
-
+            print(f"Error initializing UI from device: {str(e)}")
+        
     def updateSlot(self, status):
-        """Update the GUI based on the current laser status"""
+        """Update UI elements based on device status updates"""
         try:
-            # Update wavelength and energy displays
-            self.display_nm.setText(f"{status['tunable']['wavelength']:.3f} nm")
-            photon_energy = H_C*N_AIR*1000/status['tunable']['wavelength']
-            self.display_energy.setText(f"{photon_energy:.3f} meV")
-
-            # Update power display
-            self.display_power_tunable.setText(f"{status['tunable']['power']} mW")
-
-            # Update lasing indicator
-            if status['lasing']:
-                self.lasing_indicator.setStyleSheet("background-color: green; border-radius: 7px;")
-                if not self.laser_toggle.isChecked():
-                    self.laser_toggle.setChecked(True)
-                    self.laser_toggle.setText("ON")
+            # Update wavelength display
+            wl = status["tunable"]["wavelength"]
+            self.current_wavelength = wl
+            self.wavelength_slider.setValue(wl)
+            self.tunable_status_label.setText(f"TUNABLE {wl} nm:")
+            self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/wl))
+            
+            # Update shutter status
+            fixed_shutter = self.is_shutter_open_fixed()
+            tunable_shutter = status["tunable"]["shutter"]
+            
+            if fixed_shutter != self.fixed_shutter_open:
+                self.fixed_shutter_open = fixed_shutter
+                self.update_fixed_shutter_ui()
+                
+            if tunable_shutter != self.tunable_shutter_open:
+                self.tunable_shutter_open = tunable_shutter
+                self.update_tunable_shutter_ui()
+            
+            # Update lasing status
+            is_lasing = status["lasing"]
+            
+            # Update power displays
+            if  is_lasing:
+                self.fixed_power = 4500.0  # Estimated - would need actual power reading
+                self.fixed_power_display.display(self.fixed_power)
+                self.fixed_lasing_indicator.setStyleSheet("color: #FF0000; font-size: 20px;")
+                
+                self.tunable_power = status["tunable"]["power"]
+                self.tunable_power_display.display(self.tunable_power)
+                self.tunable_lasing_indicator.setStyleSheet("color: #FF0000; font-size: 20px;")
             else:
-                self.lasing_indicator.setStyleSheet("background-color: red; border-radius: 7px;")
-                if self.laser_toggle.isChecked():
-                    self.laser_toggle.setChecked(False)
-                    self.laser_toggle.setText("OFF")
-
-            # Update tunable beam indicator and slider
-            if status['tunable']['shutter']:
-                self.tunable_indicator.setStyleSheet("background-color: green; border-radius: 7px;")
-                if self.tunable_shutter.value() != 1:
-                    self.tunable_shutter.setValue(1)
-            else:
-                self.tunable_indicator.setStyleSheet("background-color: red; border-radius: 7px;")
-                if self.tunable_shutter.value() != 0:
-                    self.tunable_shutter.setValue(0)
-
-            # Update fixed beam indicator (we need to add this to status in worker)
-            fixed_shutter_open = self.is_shutter_open_fixed()
-            if fixed_shutter_open:
-                self.fixed_indicator.setStyleSheet("background-color: green; border-radius: 7px;")
-                if self.fixed_shutter.value() != 1:
-                    self.fixed_shutter.setValue(1)
-            else:
-                self.fixed_indicator.setStyleSheet("background-color: red; border-radius: 7px;")
-                if self.fixed_shutter.value() != 0:
-                    self.fixed_shutter.setValue(0)
-
+                self.fixed_power_display.display(0.0)
+                self.fixed_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
+                
+                self.tunable_power = 0.0
+                self.tunable_power_display.display(0.0)
+                self.tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
+                
         except Exception as e:
-            print(f"Error updating GUI: {e}")
-
-    def show_advanced_controls(self):
-        """Show dialog with advanced controls"""
-        dialog = QtWidgets.QDialog()
-        dialog.setWindowTitle("Advanced Laser Controls")
-        dialog.setMinimumWidth(400)
-
-        layout = QtWidgets.QVBoxLayout(dialog)
-
-        # Group box for detailed wavelength control
-        wave_group = QtWidgets.QGroupBox("Wavelength Control")
-        wave_layout = QtWidgets.QFormLayout()
-
-        current_wave = self.wavelength()
-
-        # Wavelength presets
-        preset_layout = QtWidgets.QHBoxLayout()
-        preset_label = QtWidgets.QLabel("Presets:")
-        preset_layout.addWidget(preset_label)
-
-        presets = [700, 750, 800, 850, 900]
-        for preset in presets:
-            preset_btn = QtWidgets.QPushButton(f"{preset}")
-            preset_btn.setFixedWidth(50)
-            preset_btn.clicked.connect(lambda checked, p=preset: self.set_wavelength(p))
-            preset_layout.addWidget(preset_btn)
-
-        wave_layout.addRow(preset_layout)
-
-        # Fine adjustment
-        fine_layout = QtWidgets.QHBoxLayout()
-
-        # Slider for fine adjustment
-        self.fine_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.fine_slider.setRange(int(current_wave)-10, int(current_wave)+10)
-        self.fine_slider.setValue(int(current_wave))
-        self.fine_slider.valueChanged.connect(lambda v: self.set_wavelength(v))
-
-        self.fine_display = QtWidgets.QLabel(f"{current_wave:.1f} nm")
-
-        fine_layout.addWidget(QtWidgets.QLabel("Fine adjust:"))
-        fine_layout.addWidget(self.fine_slider)
-        fine_layout.addWidget(self.fine_display)
-
-        wave_layout.addRow(fine_layout)
-        wave_group.setLayout(wave_layout)
-        layout.addWidget(wave_group)
-
-        # Group box for shutter controls with safety features
-        shutter_group = QtWidgets.QGroupBox("Shutter Control")
-        shutter_layout = QtWidgets.QGridLayout()
-
-        # Tunable beam controls
-        shutter_layout.addWidget(QtWidgets.QLabel("Tunable Beam:"), 0, 0)
-
-        # Safety switch for tunable beam
-        self.tunable_safety = QtWidgets.QCheckBox("Safety")
-        self.tunable_safety.setChecked(True)
-        shutter_layout.addWidget(self.tunable_safety, 0, 1)
-
-        # Open/close buttons for tunable
-        tunable_open = QtWidgets.QPushButton("Open")
-        tunable_open.clicked.connect(lambda: self.open_shutter_with_safety("tunable"))
-        shutter_layout.addWidget(tunable_open, 0, 2)
-
-        tunable_close = QtWidgets.QPushButton("Close")
-        tunable_close.clicked.connect(self.close_shutter_tunable)
-        shutter_layout.addWidget(tunable_close, 0, 3)
-
-        # Fixed beam controls
-        shutter_layout.addWidget(QtWidgets.QLabel("Fixed Beam:"), 1, 0)
-
-        # Safety switch for fixed beam
-        self.fixed_safety = QtWidgets.QCheckBox("Safety")
-        self.fixed_safety.setChecked(True)
-        shutter_layout.addWidget(self.fixed_safety, 1, 1)
-
-        # Open/close buttons for fixed
-        fixed_open = QtWidgets.QPushButton("Open")
-        fixed_open.clicked.connect(lambda: self.open_shutter_with_safety("fixed"))
-        shutter_layout.addWidget(fixed_open, 1, 2)
-
-        fixed_close = QtWidgets.QPushButton("Close")
-        fixed_close.clicked.connect(self.close_shutter_fixed)
-        shutter_layout.addWidget(fixed_close, 1, 3)
-
-        # Emergency close all shutters
-        close_all = QtWidgets.QPushButton("CLOSE ALL SHUTTERS")
-        close_all.setStyleSheet("background-color: red; color: white; font-weight: bold;")
-        close_all.clicked.connect(self.close_all_shutters)
-        shutter_layout.addWidget(close_all, 2, 0, 1, 4)
-
-        shutter_group.setLayout(shutter_layout)
-        layout.addWidget(shutter_group)
-
-        # Status information
-        status_group = QtWidgets.QGroupBox("Status Information")
-        status_layout = QtWidgets.QFormLayout()
-
-        # Additional status information
-        self.detailed_power = QtWidgets.QLineEdit()
-        self.detailed_power.setReadOnly(True)
-        status_layout.addRow("Current Power:", self.detailed_power)
-
-        self.laser_status = QtWidgets.QLineEdit()
-        self.laser_status.setReadOnly(True)
-        status_layout.addRow("Laser Status:", self.laser_status)
-
-        # Update status immediately
-        self.detailed_power.setText(f"{self.power_tunable()} mW")
-        self.laser_status.setText("Active" if self.is_lasing() else "Inactive")
-
-        status_group.setLayout(status_layout)
-        layout.addWidget(status_group)
-
-        # Close button
-        button_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
-
-        # Update fine adjustment display when slider changes
-        def update_fine_display():
-            self.fine_display.setText(f"{self.fine_slider.value():.1f} nm")
-
-        self.fine_slider.valueChanged.connect(update_fine_display)
-
-        dialog.setModal(False)
-        dialog.show()
-
-    def open_shutter_with_safety(self, beam_type):
-        """Open shutter with safety confirmation if safety is enabled"""
+            print(f"Error in updateSlot: {str(e)}")
+    
+    def set_wavelength(self, value):
+        """Set wavelength from preset button or other input"""
         try:
-            if beam_type == "tunable" and self.tunable_safety.isChecked():
-                reply = QtWidgets.QMessageBox.question(
-                    None,
-                    'Safety Confirmation',
-                    'Are you sure you want to open the tunable beam shutter?',
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                    QtWidgets.QMessageBox.No
-                )
-                if reply == QtWidgets.QMessageBox.Yes:
-                    self.open_shutter_tunable(True)
-            elif beam_type == "fixed" and self.fixed_safety.isChecked():
-                reply = QtWidgets.QMessageBox.question(
-                    None,
-                    'Safety Confirmation',
-                    'Are you sure you want to open the fixed beam shutter?',
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                    QtWidgets.QMessageBox.No
-                )
-                if reply == QtWidgets.QMessageBox.Yes:
-                    self.open_shutter_fixed(True)
-            elif beam_type == "tunable":
-                self.open_shutter_tunable(True)
-            elif beam_type == "fixed":
-                self.open_shutter_fixed(True)
+            self.set_wavelength(value)  # Call remote method
+            self.current_wavelength = value
+            self.tunable_status_label.setText(f"TUNABLE {value} nm:")
+            self.wavelength_slider.setValue(value)
+            self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/value))
         except Exception as e:
-            print(f"Error opening shutter: {e}")
-
-    def close_all_shutters(self):
-        """Emergency function to close all shutters"""
+            print(f"Error setting wavelength: {str(e)}")
+    
+    def set_wavelength_from_input(self):
+        """Set wavelength from input field"""
         try:
-            self.close_shutter_tunable()
-            self.close_shutter_fixed()
-            QtWidgets.QMessageBox.information(
-                None,
-                'Shutters Closed',
-                'All shutters have been closed.',
-                QtWidgets.QMessageBox.Ok
+            value = int(self.wavelength_input.text())
+            if 680 <= value <= 1030:
+                self.set_wavelength(value)
+                self.wavelength_input.clear()
+            else:
+                self.wavelength_input.setStyleSheet("background-color: rgba(255, 0, 0, 50);")
+                QtCore.QTimer.singleShot(1000, lambda: self.wavelength_input.setStyleSheet(""))
+        except ValueError:
+            self.wavelength_input.setStyleSheet("background-color: rgba(255, 0, 0, 50);")
+            QtCore.QTimer.singleShot(1000, lambda: self.wavelength_input.setStyleSheet(""))
+    
+    def toggle_fixed_shutter(self):
+        """Toggle fixed beam shutter"""
+        try:
+            if self.is_shutter_open_fixed():
+                self.close_shutter_fixed()
+            else:
+                self.open_shutter_fixed()
+            self.update_fixed_shutter_ui()
+        except Exception as e:
+            print(f"Error toggling fixed shutter: {str(e)}")
+            
+    def toggle_tunable_shutter(self):
+        """Toggle tunable beam shutter"""
+        try:
+            if self.is_shutter_open_tunable():
+                self.close_shutter_tunable()
+            else:
+                self.open_shutter_tunable()
+            self.update_tunable_shutter_ui()
+        except Exception as e:
+            print(f"Error toggling tunable shutter: {str(e)}")
+    
+    def update_fixed_shutter_ui(self):
+        """Update fixed shutter button appearance"""
+        if self.is_shutter_open_fixed():
+            self.fixed_shutter_button.setText("OPEN")
+            self.fixed_shutter_button.setStyleSheet(
+                "color: white; font-weight: bold; font-size: 14px; background-color: green;"
             )
-        except Exception as e:
-            print(f"Error closing shutters: {e}")
+        else:
+            self.fixed_shutter_button.setText("CLOSED")
+            self.fixed_shutter_button.setStyleSheet(
+                "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
+            )
+    
+    def update_tunable_shutter_ui(self):
+        """Update tunable shutter button appearance"""
+        if self.is_shutter_open_tunable():
+            self.tunable_shutter_button.setText("OPEN")
+            self.tunable_shutter_button.setStyleSheet(
+                "color: white; font-weight: bold; font-size: 14px; background-color: green;"
+            )
+        else:
+            self.tunable_shutter_button.setText("CLOSED")
+            self.tunable_shutter_button.setStyleSheet(
+                "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
+            )
+    
+    def get_wavelength(self):
+        """Get current wavelength - maintained for backward compatibility"""
+        return self.wavelength()

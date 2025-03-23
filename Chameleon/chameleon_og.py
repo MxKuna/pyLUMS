@@ -1,15 +1,28 @@
 # -*- coding: utf-8 -*-
-from devices.zeromq_device import DeviceWorker,DeviceOverZeroMQ,remote,include_remote_methods
-from PyQt5 import QtWidgets,QtCore
-from PyQt5.QtWidgets import (QPushButton, QMessageBox, QDialog)
-from PyQt5.QtWidgets import (QApplication, QWidget, QMainWindow)
-from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QLineEdit)
-from PyQt5.QtWidgets import (QLabel, QInputDialog)
-from PyQt5.QtGui import (QFont, QColor)
-import scipy.optimize
 import numpy as np
+import scipy.optimize
 from devices import H_C, N_AIR
-
+from devices.zeromq_device import (
+    DeviceOverZeroMQ,
+    DeviceWorker,
+    include_remote_methods,
+    remote,
+)
+from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class ChameleonWorker(DeviceWorker):
