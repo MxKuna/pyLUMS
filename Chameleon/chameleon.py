@@ -174,7 +174,7 @@ class Chameleon(DeviceOverZeroMQ):
         fixed_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
         self.fixed_lasing_indicator = fixed_lasing_indicator
         
-        fixed_status_label = QLabel("FIXED \t\t 1030 nm:")
+        fixed_status_label = QLabel("FIXED > 1030 nm:")
         fixed_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         fixed_status_label.setMinimumWidth(110)
         fixed_status_label.setMaximumWidth(170)
@@ -213,7 +213,7 @@ class Chameleon(DeviceOverZeroMQ):
         tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
         self.tunable_lasing_indicator = tunable_lasing_indicator
         
-        self.tunable_status_label = QLabel(f"TUNABLE \t {self.current_wavelength} nm:")
+        self.tunable_status_label = QLabel(f"TUNABLE > {self.current_wavelength} nm:")
         self.tunable_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.tunable_status_label.setMinimumWidth(110)
         self.tunable_status_label.setMaximumWidth(170)
@@ -292,7 +292,7 @@ class Chameleon(DeviceOverZeroMQ):
         # Input field and set button
         input_layout = QHBoxLayout()
         self.wavelength_input = QLineEdit()
-        self.wavelength_input.setPlaceholderText("Enter wavelength (680-900 nm)")
+        self.wavelength_input.setPlaceholderText("Enter wavelength (680-1030 nm)")
         self.wavelength_input.returnPressed.connect(self.set_wavelength_from_input)
         set_button = QPushButton("Set")
         set_button.clicked.connect(self.set_wavelength_from_input)
@@ -301,17 +301,18 @@ class Chameleon(DeviceOverZeroMQ):
         wavelength_inner_layout.addLayout(input_layout)
         
         # Slider for wavelength (read-only indicator)
-        wavelength_inner_layout.addWidget(QLabel("Current Wavelength:"))
+        self.inner_wl_label = QLabel(f"Current Wavelength: {self.current_wavelength}")
+        wavelength_inner_layout.addWidget(self.inner_wl_label)
         self.wavelength_slider = QSlider(QtCore.Qt.Horizontal)
         self.wavelength_slider.setMinimum(680)
-        self.wavelength_slider.setMaximum(900)
+        self.wavelength_slider.setMaximum(1030)
         self.wavelength_slider.setValue(self.current_wavelength)
         self.wavelength_slider.setEnabled(False)  # Make the slider inactive/read-only
         
         slider_layout = QHBoxLayout()
         slider_layout.addWidget(QLabel("680 nm"))
         slider_layout.addWidget(self.wavelength_slider)
-        slider_layout.addWidget(QLabel("900 nm"))
+        slider_layout.addWidget(QLabel("1030 nm"))
         wavelength_inner_layout.addLayout(slider_layout)
         
         # Preset buttons
@@ -414,7 +415,7 @@ class Chameleon(DeviceOverZeroMQ):
         # Input field and set button
         input_layout = QHBoxLayout()
         popup_wavelength_input = QLineEdit()
-        popup_wavelength_input.setPlaceholderText("Enter wavelength (680-900 nm)")
+        popup_wavelength_input.setPlaceholderText("Enter wavelength (680-1030 nm)")
         self.popup_wavelength_input = popup_wavelength_input  # Save reference for validation
         popup_wavelength_input.returnPressed.connect(lambda: self.set_wavelength_from_popup(popup_wavelength_input.text()))
         popup_set_button = QPushButton("Set")
@@ -425,11 +426,11 @@ class Chameleon(DeviceOverZeroMQ):
         
         # Current wavelength display
         current_wl_layout = QHBoxLayout()
-        current_wl_label = QLabel("Current Wavelength:")
+        self.current_wl_label = QLabel("Current Wavelength:")
         popup_wl_value = QLabel(f"{self.current_wavelength} nm")
         popup_wl_value.setStyleSheet("font-weight: bold; font-size: 16px; color: #00AAFF;")
         self.popup_wl_value = popup_wl_value  # Save reference to update later
-        current_wl_layout.addWidget(current_wl_label)
+        current_wl_layout.addWidget(self.current_wl_label)
         current_wl_layout.addWidget(popup_wl_value)
         wavelength_layout.addLayout(current_wl_layout)
         
@@ -437,13 +438,13 @@ class Chameleon(DeviceOverZeroMQ):
         popup_slider_layout = QHBoxLayout()
         popup_wavelength_slider = QSlider(QtCore.Qt.Horizontal)
         popup_wavelength_slider.setMinimum(680)
-        popup_wavelength_slider.setMaximum(900)
+        popup_wavelength_slider.setMaximum(1030)
         popup_wavelength_slider.setValue(self.current_wavelength)
         popup_wavelength_slider.setEnabled(False)  # Make the slider inactive/read-only
         self.popup_wavelength_slider = popup_wavelength_slider  # Save reference to update later
         min_label = QLabel("680 nm")
         min_label.setStyleSheet("color: #999999;")
-        max_label = QLabel("900 nm")
+        max_label = QLabel("1030 nm")
         max_label.setStyleSheet("color: #999999;")
         popup_slider_layout.addWidget(min_label)
         popup_slider_layout.addWidget(popup_wavelength_slider)
@@ -510,13 +511,13 @@ class Chameleon(DeviceOverZeroMQ):
         """Handle wavelength setting from popup window with validation"""
         try:
             value = int(text)
-            if 680 <= value <= 900:
+            if 680 <= value <= 1030:
                 self.set_wavelength(value)
                 self.popup_wavelength_input.clear()
                 self.popup_status_msg.setText("")
             else:
                 self.popup_wavelength_input.setStyleSheet("background-color: rgba(255, 0, 0, 50);")
-                self.popup_status_msg.setText(f"Valid range: 680-900 nm. Got: {value} nm")
+                self.popup_status_msg.setText(f"Valid range: 680-1030 nm. Got: {value} nm")
                 QtCore.QTimer.singleShot(1000, lambda: self.popup_wavelength_input.setStyleSheet("background-color: #1E1E1E; color: #FFFFFF;"))
         except ValueError:
             self.popup_wavelength_input.setStyleSheet("background-color: rgba(255, 0, 0, 50);")
@@ -551,7 +552,8 @@ class Chameleon(DeviceOverZeroMQ):
             wl = self.wavelength()
             self.current_wavelength = wl
             self.wavelength_slider.setValue(wl)
-            self.tunable_status_label.setText(f"TUNABLE {wl} nm:")
+            self.tunable_status_label.setText(f"TUNABLE > {wl} nm:")
+            self.inner_wl_label.setText(f"Current Wavelength = {self.current_wavelength}")
             
             # Update shutter status
             self.fixed_shutter_open = self.is_shutter_open_fixed()
@@ -591,7 +593,8 @@ class Chameleon(DeviceOverZeroMQ):
             wl = status["tunable"]["wavelength"]
             self.current_wavelength = wl
             self.wavelength_slider.setValue(wl)
-            self.tunable_status_label.setText(f"TUNABLE {wl} nm:")
+            self.tunable_status_label.setText(f"TUNABLE > {wl} nm:")
+            self.inner_wl_label.setText(f"Current Wavelength = {self.current_wavelength}")
             self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/wl))
             
             # Update shutter status
@@ -649,7 +652,7 @@ class Chameleon(DeviceOverZeroMQ):
             
             # Update UI elements
             self.current_wavelength = value
-            self.tunable_status_label.setText(f"TUNABLE {value} nm:")
+            self.tunable_status_label.setText(f"TUNABLE > {value} nm:")
             self.wavelength_slider.setValue(value)
             self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/value))
             
