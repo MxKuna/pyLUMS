@@ -33,6 +33,9 @@ from PyQt5.QtWidgets import (
 
 
 class ChameleonWorker(DeviceWorker):
+    '''The class contains every methods needed to talk to the motor'''
+
+
     def __init__(self, port, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.port = port
@@ -55,11 +58,7 @@ class ChameleonWorker(DeviceWorker):
 
     def status(self):
         d = super().status()
-        d["laser"] = \
-            {
-                "lasing": self.is_lasing(),
-                "task": self.busy()
-            }
+        d["lasing"] = self.is_lasing()
         d["tunable"] = \
             {
                 "wavelength": self.wavelength(),
@@ -140,8 +139,7 @@ class ChameleonWorker(DeviceWorker):
         return int(self.query("?PFIXED"))
 
     @remote
-    def busy(self) -> str:
-        '''Returns string with the ongoing process (e.g. "Warming up" or "Standby")'''
+    def busy(self):
         return str(self.query("?ST"))
 
     @remote
@@ -163,7 +161,6 @@ class ChameleonWorker(DeviceWorker):
     def align_fixed(self) -> int:
         '''Returns the alignment mode status: 1-Enabled and 0-Disabled'''
         return int(self.query("?ALIGNFIXED"))
-
 
 @include_remote_methods(ChameleonWorker)
 class Chameleon(DeviceOverZeroMQ):
@@ -248,7 +245,7 @@ class Chameleon(DeviceOverZeroMQ):
         tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
         self.tunable_lasing_indicator = tunable_lasing_indicator
 
-        self.tunable_status_label = QLabel(f"VAR {self.current_wavelength} nm:")
+        self.tunable_status_label = QLabel(f"TUN {self.current_wavelength} nm:")
         self.tunable_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.tunable_status_label.setMinimumWidth(110)
         self.tunable_status_label.setMaximumWidth(170)
@@ -285,7 +282,7 @@ class Chameleon(DeviceOverZeroMQ):
 
         # Fixed beam shutter controls
         fixed_layout = QHBoxLayout()
-        fixed_label = QLabel("FIX:")
+        fixed_label = QLabel("FIXED:")
         fixed_label.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.fixed_shutter_button = QPushButton("CLOSED")
         self.fixed_shutter_button.setCheckable(True)
@@ -342,7 +339,7 @@ class Chameleon(DeviceOverZeroMQ):
         self.wavelength_slider.setMinimum(680)
         self.wavelength_slider.setMaximum(1030)
         self.wavelength_slider.setValue(self.current_wavelength)
-        self.wavelength_slider.setEnabled(False)  #slide read-only
+        self.wavelength_slider.setEnabled(False)  # Make the slider inactive/read-only
 
         slider_layout = QHBoxLayout()
         slider_layout.addWidget(QLabel("680 nm"))
@@ -353,11 +350,14 @@ class Chameleon(DeviceOverZeroMQ):
         # Preset buttons
         button_layout = QHBoxLayout()
         self.preset_680 = QPushButton("680 nm")
-        self.preset_700 = QPushButton("700 nm")
+        self.preset_750 = QPushButton("750 nm")
+        self.preset_800 = QPushButton("800 nm")
         self.preset_680.clicked.connect(lambda: self.set_wavelength(680))
-        self.preset_700.clicked.connect(lambda: self.set_wavelength(700))
+        self.preset_750.clicked.connect(lambda: self.set_wavelength(750))
+        self.preset_800.clicked.connect(lambda: self.set_wavelength(800))
         button_layout.addWidget(self.preset_680)
-        button_layout.addWidget(self.preset_700)
+        button_layout.addWidget(self.preset_750)
+        button_layout.addWidget(self.preset_800)
         wavelength_inner_layout.addWidget(QLabel("Presets:"))
         wavelength_inner_layout.addLayout(button_layout)
 
@@ -486,11 +486,17 @@ class Chameleon(DeviceOverZeroMQ):
         # Preset buttons
         button_layout = QHBoxLayout()
         preset_680 = QPushButton("680 nm")
-        preset_700 = QPushButton("700 nm")
+        preset_750 = QPushButton("750 nm")
+        preset_800 = QPushButton("800 nm")
+        preset_850 = QPushButton("850 nm")
         preset_680.clicked.connect(lambda: self.set_wavelength(680))
-        preset_700.clicked.connect(lambda: self.set_wavelength(700))
+        preset_750.clicked.connect(lambda: self.set_wavelength(750))
+        preset_800.clicked.connect(lambda: self.set_wavelength(800))
+        preset_850.clicked.connect(lambda: self.set_wavelength(850))
         button_layout.addWidget(preset_680)
-        button_layout.addWidget(preset_700)
+        button_layout.addWidget(preset_750)
+        button_layout.addWidget(preset_800)
+        button_layout.addWidget(preset_850)
         wavelength_layout.addWidget(QLabel("Presets:"))
         wavelength_layout.addLayout(button_layout)
 
@@ -516,7 +522,7 @@ class Chameleon(DeviceOverZeroMQ):
         shutter_status_layout = QHBoxLayout()
         tunable_status = "OPEN" if self.tunable_shutter_open else "CLOSED"
         tunable_color = "green" if self.tunable_shutter_open else "gray"
-        shutter_status_label = QLabel(f"Tunable Shutter: {tunable_status}")
+        shutter_status_label = QLabel(f"Tunable Shutter: ")
         shutter_status_value = QLabel(tunable_status)
         shutter_status_value.setStyleSheet(f"color: {tunable_color}; font-weight: bold;")
         self.popup_shutter_status = shutter_status_value  # Save reference to update later
@@ -578,7 +584,7 @@ class Chameleon(DeviceOverZeroMQ):
             wl = self.wavelength()
             self.current_wavelength = wl
             self.wavelength_slider.setValue(wl)
-            self.tunable_status_label.setText(f"VAR {wl} nm:")
+            self.tunable_status_label.setText(f"TUN {wl} nm:")
             self.inner_wl_label.setText(f"Current Wavelength = {self.current_wavelength}")
 
             # Update shutter status
@@ -619,7 +625,7 @@ class Chameleon(DeviceOverZeroMQ):
             wl = status["tunable"]["wavelength"]
             self.current_wavelength = wl
             self.wavelength_slider.setValue(wl)
-            self.tunable_status_label.setText(f"VAR {wl} nm:")
+            self.tunable_status_label.setText(f"TUN {wl} nm:")
             self.inner_wl_label.setText(f"Current Wavelength = {self.current_wavelength}")
             self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/wl))
 
@@ -679,7 +685,7 @@ class Chameleon(DeviceOverZeroMQ):
 
             # Update UI elements
             self.current_wavelength = value
-            self.tunable_status_label.setText(f"VAR {value} nm:")
+            self.tunable_status_label.setText(f"TUN {value} nm:")
             self.wavelength_slider.setValue(value)
             self.display_energy.setText("%.3f meV" % (H_C*N_AIR*1000/value))
 
@@ -749,3 +755,7 @@ class Chameleon(DeviceOverZeroMQ):
             self.tunable_shutter_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
             )
+
+    def get_wavelength(self):
+        """Get current wavelength - maintained for backward compatibility"""
+        return self.wavelength()
