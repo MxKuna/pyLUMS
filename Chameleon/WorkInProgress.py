@@ -593,21 +593,19 @@ class Chameleon(DeviceOverZeroMQ):
 
     def update_align(self):
         """Update the alignment mode checkboxes"""
-        if self.fixed_align or self.checkbox1.isChecked():
+        if self.fixed_align and self.checkbox1.isChecked():
             self.checkbox2.setDisabled(True)
-        if self.tunable_align or self.checkbox2.isChecked():
+        if self.tunable_align and self.checkbox2.isChecked():
             self.checkbox1.setDisabled(True)
 
     def switch_align_fixed(self):
         try :
             self.set_align_fixed(0 if self.checkbox1.isChecked() else 1)
-            self.checkbox1.setChecked(self.fixed_align)
         except Exception as e:
             print(f"Error in switch_align_fixed: {str(e)}")
 
     def switch_align_tunable(self):
         try :
-            self.set_align_tunable(0 if self.checkbox2.isChecked() else 1)
-            self.checkbox2.setChecked(self.tunable_align)
+            self.set_align_tunable(0 if self.checkbox2.isChecked() else 1)                                                                                                                                                                                                                                                                      
         except Exception as e:
             print(f"Error in switch_align_tunable: {str(e)}")
