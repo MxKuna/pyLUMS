@@ -1,375 +1,280 @@
-import sys
-
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import (
-    QApplication,
-    QDockWidget,
-    QFrame,
-    QGroupBox,
-    QHBoxLayout,
-    QLabel,
-    QLCDNumber,
-    QLineEdit,
-    QMainWindow,
-    QPushButton,
-    QSlider,
-    QVBoxLayout,
-    QWidget,
-)
-
-
-class ChameleonGUI(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Chameleon Laser GUI")
-        self.setGeometry(100, 100, 650, 550)
-        self.current_wavelength = 750  # Default value
-        
-        # Lasing states and power values
-        self.fixed_lasing = False
-        self.tunable_lasing = False
-        self.fixed_power = 0.0    # Power in mW
-        self.tunable_power = 0.0  # Power in mW
-        
-        # Shutter states
+class Chameleon(DeviceOverZeroMQ):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Default values for GUI display
+        self.keyswitch = 0
+        self.busy = ""
+        self.tuning = 0
+        self.lasing = 0
+        self.current_wavelength = 2137
+        self.fixed_power = 2137
+        self.tunable_power = 2137
         self.fixed_shutter_open = False
         self.tunable_shutter_open = False
+
+        self.dict = {
+            "keyswitch": {"ON": 1, "OFF": 0}, 
+            "tuning": {"Tuning...": 1, "Tuned": 0}, 
+            "lasing": {"Lasing!": 1, "Not Lasing": 0}   
+        }
+
+    def createDock(self, parentWidget, menu=None):
+        # Create the dock widget
+        dock = QDockWidget("Chameleon Laser Control", parentWidget)
         
-        self.createDock()
-    
-    def createDock(self):
-        """Creates a dock widget with lasing status, shutters, and wavelength controls"""
-        dock = QDockWidget("Chameleon laser", self)
-        widget = QWidget()
-        main_layout = QVBoxLayout()
+        # Create a main widget to hold the content
+        main_widget = QWidget(parentWidget)
         
-        # ---- 1. Lasing Status and Powers Section ----
-        lasing_group = QGroupBox("Laser Status")
-        lasing_layout = QVBoxLayout()
+        # Create a tab widget
+        tab_widget = QTabWidget()
+                        
+        # First Tab - 2x2 Grid of Smaller Groups with Additional Row
+        first_tab = QWidget()
+        first_tab_layout = QVBoxLayout()
         
-        # Create a horizontal separator line
-        def create_separator():
-            line = QFrame()
-            line.setFrameShape(QFrame.HLine)
-            line.setFrameShadow(QFrame.Sunken)
-            return line
+        # Create outer group for grid
+        grid_outer_group = QGroupBox("Processes")
+        grid_outer_group_layout = QVBoxLayout()
         
-        # Fixed beam status
-        fixed_status_layout = QHBoxLayout()
+        # Create grid layout directly
+        grid_layout = QGridLayout()
         
-        # Indicator and label in one container with fixed width
-        fixed_label_container = QHBoxLayout()
-        fixed_lasing_indicator = QLabel("⬤")
-        fixed_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
-        self.fixed_lasing_indicator = fixed_lasing_indicator
+        # Create 2x2 grid of groups
+        group_names = {
+            "KEYSWITCH": self.keyswitch, 
+            "BUSY": self.busy, 
+            "TUNING": self.tuning, 
+            "LASING": self.lasing   
+        }
+
+        for i in range(2):
+            for j in range(2):
+                sub_group = QGroupBox(list(group_names.keys())[i*2 + j])
+                sub_group_layout = QVBoxLayout()
+                
+                sub_group_text_box = QLineEdit(f"{list(group_names.values())[i*2 + j]}")
+                sub_group_text_box.setReadOnly(True)
+                sub_group_text_box.setStyleSheet("""
+                    background-color: #f0f0f0;
+                    color: black;
+                    border: 1px solid #a0a0a0;
+                    padding: 4px;
+                """)
         
-        fixed_status_label = QLabel("FIXED 1064 nm:")
-        fixed_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        fixed_status_label.setMinimumWidth(150)
-        fixed_status_label.setMaximumWidth(150)
+                sub_group_layout.addWidget(sub_group_text_box)
+                sub_group.setLayout(sub_group_layout)
+                grid_layout.addWidget(sub_group, i, j)
         
-        fixed_label_container.addWidget(fixed_lasing_indicator)
-        fixed_label_container.addWidget(fixed_status_label)
-        fixed_label_container.addStretch()
+        grid_outer_group_layout.addLayout(grid_layout)
+        grid_outer_group.setLayout(grid_outer_group_layout)
+        first_tab_layout.addWidget(grid_outer_group, 2)
         
-        # Power display container
-        power_display_container = QHBoxLayout()
-        self.fixed_power_display = QLCDNumber()
-        self.fixed_power_display.setDigitCount(5)
-        self.fixed_power_display.setSegmentStyle(QLCDNumber.Flat)
-        self.fixed_power_display.setStyleSheet("color: #00AAFF; background-color: black;")
-        self.fixed_power_display.setMinimumWidth(100)
-        self.fixed_power_display.display(self.fixed_power)
+        # New Group for Checkboxes
+        checkbox_group = QGroupBox("Alignment Mode")
+        checkbox_layout = QHBoxLayout()
         
-        power_unit_label = QLabel("mW")
-        power_unit_label.setStyleSheet("font-weight: bold;")
+        # Label for the checkbox row
+        checkbox_label = QLabel("Check to enable:")
         
-        power_display_container.addWidget(self.fixed_power_display)
-        power_display_container.addWidget(power_unit_label)
+        # Two Checkboxes
+        checkbox1 = QtWidgets.QCheckBox("FIXED")
+        checkbox2 = QtWidgets.QCheckBox("TUNABLE")
         
-        # Add both containers to the main layout with stretch
-        fixed_status_layout.addLayout(fixed_label_container, 1)
-        fixed_status_layout.addLayout(power_display_container, 1)
-        lasing_layout.addLayout(fixed_status_layout)
+        checkbox_layout.addWidget(checkbox_label)
+        checkbox_layout.addWidget(checkbox1)
+        checkbox_layout.addWidget(checkbox2)
         
-        lasing_layout.addWidget(create_separator())
+        checkbox_group.setLayout(checkbox_layout)
+        first_tab_layout.addWidget(checkbox_group, 1)
         
-        # Tunable beam status
-        tunable_status_layout = QHBoxLayout()
+        first_tab.setLayout(first_tab_layout)
         
-        # Indicator and label in one container with fixed width
-        tunable_label_container = QHBoxLayout()
-        tunable_lasing_indicator = QLabel("⬤")
-        tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
-        self.tunable_lasing_indicator = tunable_lasing_indicator
+        # Second Tab - Button on Top, Group Below Divided Vertically
+        second_tab = QWidget()
+        second_tab_layout = QVBoxLayout()
         
-        tunable_status_label = QLabel(f"TUNABLE {self.current_wavelength} nm:")
-        tunable_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        tunable_status_label.setMinimumWidth(150)
-        tunable_status_label.setMaximumWidth(150)
-        self.tunable_status_label = tunable_status_label
+        # Red Rectangle Label
+        red_rectangle = QLabel("LASING!")
+        red_rectangle.setAlignment(Qt.AlignCenter)
+        red_rectangle.setStyleSheet("""
+            background-color: red; 
+            color: white; 
+            font-weight: bold; 
+            font-size: 20px; 
+            border: 3px solid darkred; 
+            padding: 4px;
+            border-radius: 10px;
+        """)
+        red_rectangle.setMinimumHeight(20)  # Ensure minimum height
+        red_rectangle.setMaximumHeight(35)  # Ensure max height
         
-        tunable_label_container.addWidget(tunable_lasing_indicator)
-        tunable_label_container.addWidget(tunable_status_label)
-        tunable_label_container.addStretch()
+        # Main Group for Second Tab
+        second_main_group = QGroupBox("SHUTTERS")
+        second_main_group_layout = QHBoxLayout()
         
-        # Power display container
-        tunable_power_container = QHBoxLayout()
-        self.tunable_power_display = QLCDNumber()
-        self.tunable_power_display.setDigitCount(5)
-        self.tunable_power_display.setSegmentStyle(QLCDNumber.Flat)
-        self.tunable_power_display.setStyleSheet("color: #00AAFF; background-color: black;")
-        self.tunable_power_display.setMinimumWidth(100)
-        self.tunable_power_display.display(self.tunable_power)
+        # left Subgroup
+        left_subgroup = QGroupBox("FIXED")
+        left_subgroup_layout = QVBoxLayout()
         
-        power_unit_label2 = QLabel("mW")
-        power_unit_label2.setStyleSheet("font-weight: bold;")
+        left_label = QLabel("1030 nm")
+        left_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        left_label.setAlignment(Qt.AlignCenter)
+        left_lcd = QLCDNumber()
+        left_lcd.setDigitCount(5)
+        left_lcd.setStyleSheet("color: blue; background-color: black;")
+        left_lcd.setMinimumHeight(40)
+        left_lcd.display(12345)
         
-        tunable_power_container.addWidget(self.tunable_power_display)
-        tunable_power_container.addWidget(power_unit_label2)
+        self.left_button = QPushButton("OPEN")
+        self.left_button.setMinimumHeight(32)
         
-        # Add both containers to the main layout with stretch
-        tunable_status_layout.addLayout(tunable_label_container, 1)
-        tunable_status_layout.addLayout(tunable_power_container, 1)
-        lasing_layout.addLayout(tunable_status_layout)
+        left_subgroup_layout.addWidget(left_label)
+        left_subgroup_layout.addWidget(left_lcd)
+        left_subgroup_layout.addWidget(self.left_button)
+        left_subgroup.setLayout(left_subgroup_layout)
         
-        # Test buttons (for simulation only, would be removed in production)
-        test_layout = QHBoxLayout()
-        test_fixed_button = QPushButton("Test Fixed")
-        test_fixed_button.clicked.connect(self.test_fixed_lasing)
-        test_tunable_button = QPushButton("Test Tunable")
-        test_tunable_button.clicked.connect(self.test_tunable_lasing)
-        test_layout.addWidget(test_fixed_button)
-        test_layout.addWidget(test_tunable_button)
-        lasing_layout.addLayout(test_layout)  # Add test buttons
+        # Bottom Subgroup
+        right_subgroup = QGroupBox("TUNABLE")
+        right_subgroup_layout = QVBoxLayout()
         
-        lasing_group.setLayout(lasing_layout)
-        main_layout.addWidget(lasing_group)
+        self.right_label = QLabel(f"{self.current_wavelength} nm")
+        self.right_label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        self.right_label.setAlignment(Qt.AlignCenter)
+        right_lcd = QLCDNumber()
+        right_lcd.setDigitCount(5)
+        right_lcd.setStyleSheet("color: green; background-color: black;")
+        right_lcd.setMinimumHeight(40)
+        right_lcd.display(67890)
         
-        # ---- 2. Shutter Control Section ----
-        shutter_group = QGroupBox("Shutter Control")
-        shutter_layout = QVBoxLayout()
+        self.right_button = QPushButton("OPEN")
+        self.right_button.setMinimumHeight(32)
         
-        # Create horizontal layouts for each shutter with labels outside button
-        fixed_layout = QHBoxLayout()
-        tunable_layout = QHBoxLayout()
+        right_subgroup_layout.addWidget(self.right_label)
+        right_subgroup_layout.addWidget(right_lcd)
+        right_subgroup_layout.addWidget(self.right_button)
+        right_subgroup.setLayout(right_subgroup_layout)
         
-        # Fixed beam controls
-        fixed_label = QLabel("FIXED Beam:")
-        fixed_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        self.fixed_shutter_button = QPushButton("CLOSED")
-        self.fixed_shutter_button.setCheckable(True)
-        self.fixed_shutter_button.clicked.connect(self.toggle_fixed_shutter)
-        self.fixed_shutter_button.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
-        self.fixed_shutter_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        fixed_layout.addWidget(fixed_label, 1)
-        fixed_layout.addWidget(self.fixed_shutter_button, 2)
+        # Add subgroups to main group
+        second_main_group_layout.addWidget(left_subgroup)
+        second_main_group_layout.addWidget(right_subgroup)
+        second_main_group.setLayout(second_main_group_layout)
         
-        # Tunable beam controls  
-        tunable_label = QLabel("TUNABLE Beam:")
-        tunable_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        self.tunable_shutter_button = QPushButton("CLOSED")
-        self.tunable_shutter_button.setCheckable(True)
-        self.tunable_shutter_button.clicked.connect(self.toggle_tunable_shutter)
-        self.tunable_shutter_button.setStyleSheet("color: red; font-weight: bold; font-size: 14px;")
-        self.tunable_shutter_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-        tunable_layout.addWidget(tunable_label, 1)
-        tunable_layout.addWidget(self.tunable_shutter_button, 2)
+        # Add components to second tab layout
+        second_tab_layout.addWidget(red_rectangle)
+        second_tab_layout.addWidget(second_main_group)
         
-        shutter_layout.addLayout(fixed_layout)
-        shutter_layout.addLayout(tunable_layout)
-        shutter_group.setLayout(shutter_layout)
-        main_layout.addWidget(shutter_group)
+        second_tab.setLayout(second_tab_layout)
+
+        # Third Tab
+        third_tab = QWidget()
+        third_tab_layout = QVBoxLayout()
         
-        # ---- 3. Wavelength Control Section ----
+       # Wavelength Control Group
         wavelength_group = QGroupBox("Wavelength Control")
         wavelength_layout = QVBoxLayout()
         
-        wavelength_layout.addWidget(QLabel("Set Wavelength (nm):"))
+        # Wavelength Preset Buttons
+        preset_layout = QHBoxLayout()
+        preset_buttons = [
+            ("680 nm", 680),
+            ("700 nm", 700),
+            ("750 nm", 750)
+        ]
         
-        # Input field and feedback
-        input_layout = QHBoxLayout()
-        self.wavelength_input = QLineEdit()
-        self.wavelength_input.setPlaceholderText("Enter wavelength (660-1320 nm)")
-        self.wavelength_input.returnPressed.connect(self.set_wavelength_from_input)
-        set_button = QPushButton("Set")
-        set_button.clicked.connect(self.set_wavelength_from_input)
-        input_layout.addWidget(self.wavelength_input, 3)
-        input_layout.addWidget(set_button, 1)
-        wavelength_layout.addLayout(input_layout)
+        for label, wavelength in preset_buttons:
+            btn = QPushButton(label)
+            btn.setMinimumHeight(40)
+            btn.clicked.connect(lambda checked, wl=wavelength: self.set_wavelength(wl))
+            preset_layout.addWidget(btn)
         
-        # Slider
-        self.wavelength_slider = QSlider(QtCore.Qt.Horizontal)
-        self.wavelength_slider.setMinimum(660)
-        self.wavelength_slider.setMaximum(1320)
-        self.wavelength_slider.setValue(self.current_wavelength)
-        self.wavelength_slider.valueChanged.connect(self.set_wavelength_from_slider)
+        # Manual Wavelength Input
+        manual_input_layout = QHBoxLayout()
+        manual_input_label = QLabel("Enter Wavelength:")
+        manual_input = QLineEdit()
+        manual_input.setPlaceholderText("Enter wavelength (nm)")
+        manual_input.setValidator(QIntValidator(600, 800))  # Limit input to 600-800 nm
         
+        set_manual_btn = QPushButton("Set")
+        set_manual_btn.setMinimumHeight(32)
+        
+        # Connect manual input button
+        def set_manual_wavelength():
+            try:
+                wavelength = int(manual_input.text())
+                if 600 <= wavelength <= 800:
+                    self.set_wavelength(wavelength)
+                    manual_input.clear()
+                else:
+                    QMessageBox.warning(None, "Invalid Input", "Wavelength must be between 600-800 nm")
+            except ValueError:
+                QMessageBox.warning(None, "Invalid Input", "Please enter a valid number")
+        
+        set_manual_btn.clicked.connect(set_manual_wavelength)
+        
+        manual_input_layout.addWidget(manual_input_label)
+        manual_input_layout.addWidget(manual_input)
+        manual_input_layout.addWidget(set_manual_btn)
+        
+        # Current Wavelength Display
+        wavelength_display = QLineEdit(f"{self.current_wavelength} nm")
+        wavelength_display.setReadOnly(True)
+        wavelength_display.setStyleSheet("""
+            background-color: #f0f0f0;
+            color: black;
+            border: 1px solid #a0a0a0;
+            padding: 4px;
+            font-size: 16px;
+            font-weight: bold;
+        """)
+        
+        # Read-only Slider for Visualization
         slider_layout = QHBoxLayout()
-        slider_layout.addWidget(QLabel("660 nm"))
-        slider_layout.addWidget(self.wavelength_slider)
-        slider_layout.addWidget(QLabel("1320 nm"))
-        wavelength_layout.addWidget(QLabel("Adjust Wavelength:"))
+        slider_label = QLabel("Wavelength Range:")
+        wavelength_slider = QSlider(Qt.Horizontal)
+        wavelength_slider.setMinimum(680)
+        wavelength_slider.setMaximum(1030)
+        wavelength_slider.setValue(self.current_wavelength)
+        wavelength_slider.setEnabled(False)  # Make slider read-only
+        
+        slider_layout.addWidget(slider_label)
+        slider_layout.addWidget(wavelength_slider)
+        
+        # Add components to wavelength layout
+        wavelength_layout.addLayout(preset_layout)
+        wavelength_layout.addLayout(manual_input_layout)
+        wavelength_layout.addWidget(wavelength_display)
         wavelength_layout.addLayout(slider_layout)
         
-        # Preset buttons
-        button_layout = QHBoxLayout()
-        self.preset_680 = QPushButton("680 nm")
-        self.preset_750 = QPushButton("750 nm")
-        self.preset_1030 = QPushButton("1030 nm")
-        self.preset_680.clicked.connect(lambda: self.set_wavelength(680))
-        self.preset_750.clicked.connect(lambda: self.set_wavelength(750))
-        self.preset_1030.clicked.connect(lambda: self.set_wavelength(1030))
-        button_layout.addWidget(self.preset_680)
-        button_layout.addWidget(self.preset_750)
-        button_layout.addWidget(self.preset_1030)
-        wavelength_layout.addWidget(QLabel("Presets:"))
-        wavelength_layout.addLayout(button_layout)
-        
         wavelength_group.setLayout(wavelength_layout)
-        main_layout.addWidget(wavelength_group)
         
-        widget.setLayout(main_layout)
-        dock.setWidget(widget)
-        dock.setAllowedAreas(QtCore.Qt.TopDockWidgetArea | QtCore.Qt.BottomDockWidgetArea)
-        self.addDockWidget(QtCore.Qt.TopDockWidgetArea, dock)
-    
-    def set_wavelength(self, value):
-        """Set the wavelength from a preset button"""
-        self.current_wavelength = value
-        self.tunable_status_label.setText(f"TUNABLE {self.current_wavelength} nm:")
-        self.wavelength_slider.setValue(value)
-        # Update the display if the tunable beam is lasing
-        if self.tunable_lasing:
-            self.update_tunable_power()
-    
-    def set_wavelength_from_input(self):
-        """Set the wavelength from the text input"""
-        try:
-            value = int(self.wavelength_input.text())
-            if 660 <= value <= 1320:
-                self.set_wavelength(value)
-                self.wavelength_input.clear()
-            else:
-                self.wavelength_input.setStyleSheet("background-color: rgba(255, 0, 0, 50);")
-                QtCore.QTimer.singleShot(1000, lambda: self.wavelength_input.setStyleSheet(""))
-        except ValueError:
-            self.wavelength_input.setStyleSheet("background-color: rgba(255, 0, 0, 50);")
-            QtCore.QTimer.singleShot(1000, lambda: self.wavelength_input.setStyleSheet(""))
-    
-    def set_wavelength_from_slider(self, value):
-        """Set the wavelength from the slider"""
-        self.set_wavelength(value)
-    
-    def toggle_fixed_shutter(self):
-        """Toggle the fixed beam shutter state"""
-        self.fixed_shutter_open = not self.fixed_shutter_open
-        self.update_fixed_shutter_ui()
+        # Add wavelength group to third tab layout
+        third_tab_layout.addWidget(wavelength_group)
         
-        # In a real system, this would also trigger lasing if the laser is on
-        # For this demo, we'll simulate lasing when shutter is opened
-        if self.fixed_shutter_open:
-            self.fixed_lasing = True
-            self.update_fixed_power()
-        else:
-            self.fixed_lasing = False
-            self.fixed_power = 0.0
-            self.fixed_power_display.display(0.0)
-            self.fixed_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
-    
-    def toggle_tunable_shutter(self):
-        """Toggle the tunable beam shutter state"""
-        self.tunable_shutter_open = not self.tunable_shutter_open
-        self.update_tunable_shutter_ui()
+        # Add stretch to push content to the top
+        third_tab_layout.addStretch(1)
         
-        # In a real system, this would also trigger lasing if the laser is on
-        # For this demo, we'll simulate lasing when shutter is opened
-        if self.tunable_shutter_open:
-            self.tunable_lasing = True
-            self.update_tunable_power()
-        else:
-            self.tunable_lasing = False
-            self.tunable_power = 0.0
-            self.tunable_power_display.display(0.0)
-            self.tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
-    
-    def update_fixed_shutter_ui(self):
-        """Update the UI for the fixed shutter button"""
-        if self.fixed_shutter_open:
-            self.fixed_shutter_button.setText("OPEN")
-            self.fixed_shutter_button.setStyleSheet(
-                "color: green; font-weight: bold; font-size: 14px; background-color: rgba(0, 255, 0, 100);"
-            )
-        else:
-            self.fixed_shutter_button.setText("CLOSED")
-            self.fixed_shutter_button.setStyleSheet(
-                "color: red; font-weight: bold; font-size: 14px;"
-            )
-    
-    def update_tunable_shutter_ui(self):
-        """Update the UI for the tunable shutter button"""
-        if self.tunable_shutter_open:
-            self.tunable_shutter_button.setText("OPEN")
-            self.tunable_shutter_button.setStyleSheet(
-                "color: green; font-weight: bold; font-size: 14px; background-color: rgba(0, 255, 0, 100);"
-            )
-        else:
-            self.tunable_shutter_button.setText("CLOSED")
-            self.tunable_shutter_button.setStyleSheet(
-                "color: red; font-weight: bold; font-size: 14px;"
-            )
-    
-    def update_fixed_power(self):
-        """Update the fixed beam power display (simulated)"""
-        if self.fixed_lasing:
-            # Simulated power - in real application, this would read from the hardware
-            self.fixed_power = 1500.0  # Fixed wavelength typically outputs higher power
-            self.fixed_power_display.display(self.fixed_power)
-            self.fixed_lasing_indicator.setStyleSheet("color: #FF0000; font-size: 20px;")  # Red indicator for lasing
-    
-    def update_tunable_power(self):
-        """Update the tunable beam power display (simulated)"""
-        if self.tunable_lasing:
-            # Simulated power - in real application, this would read from the hardware
-            # Power varies with wavelength in most tunable lasers
-            base_power = 1000.0
-            wavelength_factor = 1.0 - abs(self.current_wavelength - 800) / 700  # Peak power around 800nm
-            self.tunable_power = base_power * wavelength_factor
-            self.tunable_power_display.display(round(self.tunable_power, 1))
-            self.tunable_lasing_indicator.setStyleSheet("color: #FF0000; font-size: 20px;")  # Red indicator for lasing
-    
-    # Test functions for demonstration
-    def test_fixed_lasing(self):
-        """Test toggle for fixed beam lasing (demo only)"""
-        self.fixed_lasing = not self.fixed_lasing
-        if self.fixed_lasing:
-            self.update_fixed_power()
-            # Also open shutter if it's closed
-            if not self.fixed_shutter_open:
-                self.toggle_fixed_shutter()
-        else:
-            self.fixed_power = 0.0
-            self.fixed_power_display.display(0.0)
-            self.fixed_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
-    
-    def test_tunable_lasing(self):
-        """Test toggle for tunable beam lasing (demo only)"""
-        self.tunable_lasing = not self.tunable_lasing
-        if self.tunable_lasing:
-            self.update_tunable_power()
-            # Also open shutter if it's closed
-            if not self.tunable_shutter_open:
-                self.toggle_tunable_shutter()
-        else:
-            self.tunable_power = 0.0
-            self.tunable_power_display.display(0.0)
-            self.tunable_lasing_indicator.setStyleSheet("color: gray; font-size: 20px;")
-
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = ChameleonGUI()
-    window.show()
-    sys.exit(app.exec_())
+        third_tab.setLayout(third_tab_layout)
+        
+        # Add tabs to the tab widget
+        tab_widget.addTab(first_tab, "State Info")
+        tab_widget.addTab(second_tab, "Beam Control")
+        tab_widget.addTab(third_tab, "Wavelength")
+        
+        # Create a main layout for the dock widget
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(tab_widget)
+        
+        # Set the layout for the main widget
+        main_widget.setLayout(main_layout)
+        
+        # Set the main widget for the dock
+        dock.setWidget(main_widget)
+        
+        # Set allowed dock areas
+        dock.setAllowedAreas(Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea)
+        
+        # Add the dock to the parent widget
+        parentWidget.addDockWidget(Qt.TopDockWidgetArea, dock)
+        
+        if menu:
+            menu.addAction(dock.toggleViewAction())

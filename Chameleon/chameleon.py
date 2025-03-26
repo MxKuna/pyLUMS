@@ -33,9 +33,6 @@ from PyQt5.QtWidgets import (
 
 
 class ChameleonWorker(DeviceWorker):
-    '''The class contains every methods needed to talk to the motor'''
-
-
     def __init__(self, port, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.port = port
@@ -208,8 +205,8 @@ class Chameleon(DeviceOverZeroMQ):
 
         fixed_status_label = QLabel("FIX 1030 nm:")
         fixed_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        fixed_status_label.setMinimumWidth(110)
-        fixed_status_label.setMaximumWidth(170)
+        fixed_status_label.setMinimumWidth(160)
+        fixed_status_label.setMaximumWidth(160)
 
         fixed_label_container.addWidget(fixed_lasing_indicator)
         fixed_label_container.addWidget(fixed_status_label)
@@ -247,8 +244,8 @@ class Chameleon(DeviceOverZeroMQ):
 
         self.tunable_status_label = QLabel(f"TUN {self.current_wavelength} nm:")
         self.tunable_status_label.setStyleSheet("font-size: 14px; font-weight: bold;")
-        self.tunable_status_label.setMinimumWidth(110)
-        self.tunable_status_label.setMaximumWidth(170)
+        self.tunable_status_label.setMinimumWidth(160)
+        self.tunable_status_label.setMaximumWidth(160)
 
         tunable_label_container.addWidget(tunable_lasing_indicator)
         tunable_label_container.addWidget(self.tunable_status_label)
