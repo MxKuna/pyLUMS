@@ -351,9 +351,12 @@ class Chameleon(DeviceOverZeroMQ):
         # Wavelength Input Row
         input_row = QHBoxLayout()
         wavelength_label = QLabel("Wavelength (nm):")
+        wavelength_label.setStyleSheet("font-weight: bold; font-size: 16px; color: white;")
         self.wavelength_input = QLineEdit()
         self.wavelength_input.setPlaceholderText("Enter wavelength (680-1030)")
-        self.wavelength_set_button = QPushButton("Set Wavelength")
+        self.wavelength_input.setMinimumHeight(40)
+        self.wavelength_set_button = QPushButton("SET")
+        self.wavelength_set_button.setMinimumHeight(40)
         self.wavelength_set_button.clicked.connect(lambda: self.set_wavelength_with_safety())
 
         input_row.addWidget(wavelength_label)
@@ -382,13 +385,14 @@ class Chameleon(DeviceOverZeroMQ):
 
         for label, value in preset_buttons:
             preset_btn = QPushButton(label)
+            preset_btn.setMinimumHeight(40)
             preset_btn.clicked.connect(lambda _, v=value: self.set_wavelength_with_safety(v))
             preset_row.addWidget(preset_btn)
 
         # Add widgets to layout
-        wavelength_layout.addLayout(input_row)
-        wavelength_layout.addLayout(slider_layout)
-        wavelength_layout.addLayout(preset_row)
+        wavelength_layout.addLayout(input_row, 2)
+        wavelength_layout.addLayout(slider_layout, 1)
+        wavelength_layout.addLayout(preset_row, 2)
 
         wavelength_group.setLayout(wavelength_layout)
         third_tab_layout.addWidget(wavelength_group)
