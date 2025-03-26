@@ -279,9 +279,9 @@ class Chameleon(DeviceOverZeroMQ):
         second_tab_layout = QVBoxLayout()
         
         # Red Rectangle Label
-        red_rectangle = QLabel("LASING!")
-        red_rectangle.setAlignment(Qt.AlignCenter)
-        red_rectangle.setStyleSheet("""
+        self.red_rectangle = QLabel("LASING!")
+        self.red_rectangle.setAlignment(Qt.AlignCenter)
+        self.red_rectangle.setStyleSheet("""
             background-color: red; 
             color: white; 
             font-weight: bold; 
@@ -290,8 +290,8 @@ class Chameleon(DeviceOverZeroMQ):
             padding: 4px;
             border-radius: 10px;
         """)
-        red_rectangle.setMinimumHeight(20)  # Ensure minimum height
-        red_rectangle.setMaximumHeight(35)  # Ensure max height
+        self.red_rectangle.setMinimumHeight(20)  # Ensure minimum height
+        self.red_rectangle.setMaximumHeight(35)  # Ensure max height
         
         # Main Group for Second Tab
         second_main_group = QGroupBox("SHUTTERS")
@@ -304,18 +304,18 @@ class Chameleon(DeviceOverZeroMQ):
         left_label = QLabel("1030 nm")
         left_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         left_label.setAlignment(Qt.AlignCenter)
-        left_lcd = QLCDNumber()
-        left_lcd.setDigitCount(5)
-        left_lcd.setStyleSheet("color: blue; background-color: black;")
-        left_lcd.setMinimumHeight(40)
-        left_lcd.display(12345)
+        self.left_lcd = QLCDNumber()
+        self.left_lcd.setDigitCount(5)
+        self.left_lcd.setStyleSheet("color: blue; background-color: black;")
+        self.left_lcd.setMinimumHeight(40)
+        self.left_lcd.display("ERR")
         
         self.left_button = QPushButton("OPEN")
         self.left_button.setMinimumHeight(32)
         self.left_button.clicked.connect(lambda: self.open_shutter_fixed(not self.fixed_shutter_open))
         
         left_subgroup_layout.addWidget(left_label)
-        left_subgroup_layout.addWidget(left_lcd)
+        left_subgroup_layout.addWidget(self.left_lcd)
         left_subgroup_layout.addWidget(self.left_button)
         left_subgroup.setLayout(left_subgroup_layout)
         
@@ -326,18 +326,18 @@ class Chameleon(DeviceOverZeroMQ):
         self.right_label = QLabel(f"{self.current_wavelength} nm")
         self.right_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.right_label.setAlignment(Qt.AlignCenter)
-        right_lcd = QLCDNumber()
-        right_lcd.setDigitCount(5)
-        right_lcd.setStyleSheet("color: green; background-color: black;")
-        right_lcd.setMinimumHeight(40)
-        right_lcd.display(67890)
+        self.right_lcd = QLCDNumber()
+        self.right_lcd.setDigitCount(5)
+        self.right_lcd.setStyleSheet("color: green; background-color: black;")
+        self.right_lcd.setMinimumHeight(40)
+        self.right_lcd.display("ERR")
         
         self.right_button = QPushButton("OPEN")
         self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self.tunable_shutter_open))
         self.right_button.setMinimumHeight(32)
         
         right_subgroup_layout.addWidget(self.right_label)
-        right_subgroup_layout.addWidget(right_lcd)
+        right_subgroup_layout.addWidget(self.right_lcd)
         right_subgroup_layout.addWidget(self.right_button)
         right_subgroup.setLayout(right_subgroup_layout)
         
@@ -347,7 +347,7 @@ class Chameleon(DeviceOverZeroMQ):
         second_main_group.setLayout(second_main_group_layout)
         
         # Add components to second tab layout
-        second_tab_layout.addWidget(red_rectangle)
+        second_tab_layout.addWidget(self.red_rectangle)
         second_tab_layout.addWidget(second_main_group)
         
         second_tab.setLayout(second_tab_layout)
@@ -500,10 +500,10 @@ class Chameleon(DeviceOverZeroMQ):
 
 
             self.fixed_power = self.power_fixed() 
-            self.fixed_power_display.display(self.fixed_power)
+            self.left_lcd.display(self.fixed_power)
 
             self.tunable_power = self.power_tunable()
-            self.tunable_power_display.display(self.tunable_power)
+            self.right_lcd.display(self.tunable_power)
 
         except Exception as e:
             print(f"Error initializing UI from device: {str(e)}")
@@ -537,10 +537,10 @@ class Chameleon(DeviceOverZeroMQ):
 
 
             self.fixed_power = status["fixed"]["power"]
-            self.fixed_power_display.display(self.fixed_power)
+            self.left_lcd.display(self.fixed_power)
 
             self.tunable_power = status["tunable"]["power"]
-            self.tunable_power_display.display(self.tunable_power)
+            self.right_lcd.display(self.tunable_power)
 
         except Exception as e:
             print(f"Error in updateSlot: {str(e)}")
