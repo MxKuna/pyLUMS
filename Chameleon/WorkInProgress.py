@@ -44,7 +44,7 @@ class ChameleonWorker(DeviceWorker):
         rm = ResourceManager()
         self.handle = rm.open_resource(self.port)
         self.handle.baud_rate = 19200
-        self.handle.write_termination = '\r\n' 
+        self.handle.write_termination = '\r\n'
         self.handle.read_termination = '\r\n'
 
         print("Checking communication: ")
@@ -171,7 +171,7 @@ class ChameleonWorker(DeviceWorker):
     def set_align_tunable(self, state: int):
         '''Sets the alignment mode status: 1-Enabled and 0-Disabled'''
         self.query(f"ALIGNVAR={state}")
-    
+
     @remote
     def set_align_fixed(self, state: int):
         '''Sets the alignment mode status: 1-Enabled and 0-Disabled'''
@@ -198,43 +198,43 @@ class Chameleon(DeviceOverZeroMQ):
     def createDock(self, parentWidget, menu=None):
         # Create the dock widget
         dock = QDockWidget("Chameleon Laser Control", parentWidget)
-        
+
         # Create a main widget to hold the content
         main_widget = QWidget(parentWidget)
-        
+
         # Create a tab widget
         tab_widget = QTabWidget()
-                        
+
         # First Tab - 2x2 Grid of Smaller Groups with Additional Row
         first_tab = QWidget()
         first_tab_layout = QVBoxLayout()
-        
+
         # Create outer group for grid
         grid_outer_group = QGroupBox("Processes")
         grid_outer_group_layout = QVBoxLayout()
-        
+
         # Create grid layout directly
         grid_layout = QGridLayout()
-        
+
         # Create 2x2 grid of groups
         self.keyText = QLineEdit("placeholder")
         self.busyText = QLineEdit("placeholder")
         self.tuningText = QLineEdit("placeholder")
         self.lasingText = QLineEdit("placeholder")
         gridTexts = [self.keyText, self.busyText, self.tuningText, self.lasingText]
-        
+
         group_names = {
-            "KEYSWITCH": self.keyswitch, 
-            "BUSY": self.busy, 
-            "TUNING": self.tuning, 
-            "LASING": self.lasing   
+            "KEYSWITCH": self.keyswitch,
+            "BUSY": self.busy,
+            "TUNING": self.tuning,
+            "LASING": self.lasing
         }
 
         for i in range(2):
             for j in range(2):
                 sub_group = QGroupBox(list(group_names.keys())[i*2 + j])
                 sub_group_layout = QVBoxLayout()
-                
+
                 sub_group_text_box = gridTexts[i*2 + j]
                 sub_group_text_box.setReadOnly(True)
                 sub_group_text_box.setStyleSheet("""
@@ -243,64 +243,64 @@ class Chameleon(DeviceOverZeroMQ):
                     border: 1px solid #a0a0a0;
                     padding: 4px;
                 """)
-        
+
                 sub_group_layout.addWidget(sub_group_text_box)
                 sub_group.setLayout(sub_group_layout)
                 grid_layout.addWidget(sub_group, i, j)
-        
+
         grid_outer_group_layout.addLayout(grid_layout)
         grid_outer_group.setLayout(grid_outer_group_layout)
         first_tab_layout.addWidget(grid_outer_group, 2)
-        
+
         # New Group for Checkboxes
         checkbox_group = QGroupBox("Alignment Mode")
         checkbox_layout = QHBoxLayout()
-        
+
         # Label for the checkbox row
         checkbox_label = QLabel("Check to enable:")
-        
+
         # Two Checkboxes
         self.checkbox1 = QtWidgets.QCheckBox("FIXED")
         self.checkbox1.stateChanged.connect(lambda: self.switch_align_fixed)
         self.checkbox2 = QtWidgets.QCheckBox("TUNABLE")
         self.checkbox2.stateChanged.connect(lambda: self.switch_align_tunable)
-        
+
         checkbox_layout.addWidget(checkbox_label)
         checkbox_layout.addWidget(self.checkbox1)
         checkbox_layout.addWidget(self.checkbox2)
-        
+
         checkbox_group.setLayout(checkbox_layout)
         first_tab_layout.addWidget(checkbox_group, 1)
-        
+
         first_tab.setLayout(first_tab_layout)
-        
+
         # Second Tab - Button on Top, Group Below Divided Vertically
         second_tab = QWidget()
         second_tab_layout = QVBoxLayout()
-        
+
         # Red Rectangle Label
         self.red_rectangle = QLabel("LASING!")
         self.red_rectangle.setAlignment(Qt.AlignCenter)
         self.red_rectangle.setStyleSheet("""
-            background-color: red; 
-            color: white; 
-            font-weight: bold; 
-            font-size: 20px; 
-            border: 3px solid darkred; 
+            background-color: red;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+            border: 3px solid darkred;
             padding: 4px;
             border-radius: 10px;
         """)
         self.red_rectangle.setMinimumHeight(20)  # Ensure minimum height
         self.red_rectangle.setMaximumHeight(35)  # Ensure max height
-        
+
         # Main Group for Second Tab
         second_main_group = QGroupBox("SHUTTERS")
         second_main_group_layout = QHBoxLayout()
-        
+
         # left Subgroup
         left_subgroup = QGroupBox("FIXED")
         left_subgroup_layout = QVBoxLayout()
-        
+
         left_label = QLabel("1030 nm")
         left_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         left_label.setAlignment(Qt.AlignCenter)
@@ -309,20 +309,20 @@ class Chameleon(DeviceOverZeroMQ):
         self.left_lcd.setStyleSheet("color: blue; background-color: black;")
         self.left_lcd.setMinimumHeight(40)
         self.left_lcd.display("ERR")
-        
+
         self.left_button = QPushButton("OPEN")
         self.left_button.setMinimumHeight(32)
         self.left_button.clicked.connect(lambda: self.open_shutter_fixed(not self.fixed_shutter_open))
-        
+
         left_subgroup_layout.addWidget(left_label)
         left_subgroup_layout.addWidget(self.left_lcd)
         left_subgroup_layout.addWidget(self.left_button)
         left_subgroup.setLayout(left_subgroup_layout)
-        
+
         # Bottom Subgroup
         right_subgroup = QGroupBox("TUNABLE")
         right_subgroup_layout = QVBoxLayout()
-        
+
         self.right_label = QLabel(f"{self.current_wavelength} nm")
         self.right_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.right_label.setAlignment(Qt.AlignCenter)
@@ -331,25 +331,25 @@ class Chameleon(DeviceOverZeroMQ):
         self.right_lcd.setStyleSheet("color: green; background-color: black;")
         self.right_lcd.setMinimumHeight(40)
         self.right_lcd.display("ERR")
-        
+
         self.right_button = QPushButton("OPEN")
         self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self.tunable_shutter_open))
         self.right_button.setMinimumHeight(32)
-        
+
         right_subgroup_layout.addWidget(self.right_label)
         right_subgroup_layout.addWidget(self.right_lcd)
         right_subgroup_layout.addWidget(self.right_button)
         right_subgroup.setLayout(right_subgroup_layout)
-        
+
         # Add subgroups to main group
         second_main_group_layout.addWidget(left_subgroup)
         second_main_group_layout.addWidget(right_subgroup)
         second_main_group.setLayout(second_main_group_layout)
-        
+
         # Add components to second tab layout
         second_tab_layout.addWidget(self.red_rectangle)
         second_tab_layout.addWidget(second_main_group)
-        
+
         second_tab.setLayout(second_tab_layout)
 
         # Third Tab
@@ -409,28 +409,28 @@ class Chameleon(DeviceOverZeroMQ):
         wavelength_group.setLayout(wavelength_layout)
         third_tab_layout.addWidget(wavelength_group)
         third_tab.setLayout(third_tab_layout)
-        
+
         # Add tabs to the tab widget
         tab_widget.addTab(first_tab, "State Info")
         tab_widget.addTab(second_tab, "Beam Control")
         tab_widget.addTab(third_tab, "Wave")
-        
+
         # Create a main layout for the dock widget
         main_layout = QVBoxLayout()
         main_layout.addWidget(tab_widget)
-        
+
         # Set the layout for the main widget
         main_widget.setLayout(main_layout)
-        
+
         # Set the main widget for the dock
         dock.setWidget(main_widget)
-        
+
         # Set allowed dock areas
         dock.setAllowedAreas(Qt.TopDockWidgetArea | Qt.BottomDockWidgetArea)
-        
+
         # Add the dock to the parent widget
         parentWidget.addDockWidget(Qt.TopDockWidgetArea, dock)
-        
+
         if menu:
             menu.addAction(dock.toggleViewAction())
 
@@ -443,7 +443,7 @@ class Chameleon(DeviceOverZeroMQ):
     def set_wavelength_with_safety(self, wavelength=None):
         """
         Set wavelength with safety checks
-        
+
         Args:
             wavelength (int, optional): Wavelength to set. If None, reads from input box.
         """
@@ -451,23 +451,23 @@ class Chameleon(DeviceOverZeroMQ):
             # Use input box value if no wavelength provided
             if wavelength is None:
                 wavelength = int(self.wavelength_input.text())
-            
+
             # Safety checks
             if wavelength < 680 or wavelength > 1030:
                 QMessageBox.warning(
-                    None, 
-                    "Wavelength Error", 
+                    None,
+                    "Wavelength Error",
                     "Wavelength must be between 680 and 1030 nm."
                 )
                 return
-            
+
             # Set wavelength via remote method
             self.set_wavelength(wavelength)
-        
+
         except ValueError:
             QMessageBox.warning(
-                None, 
-                "Input Error", 
+                None,
+                "Input Error",
                 "Please enter a valid integer wavelength."
         )
 
@@ -495,7 +495,7 @@ class Chameleon(DeviceOverZeroMQ):
             self.busy = self.busy()
             self.tuning = self.tuning()
             self.lasing = self.is_lasing()
-            
+
             self.update_state_info()
             if self.lasing:
                 self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
@@ -503,7 +503,7 @@ class Chameleon(DeviceOverZeroMQ):
                 self.red_rectangle.setStyleSheet("background-color: gray; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkgray; padding: 4px; border-radius: 10px;")
 
 
-            self.fixed_power = self.power_fixed() 
+            self.fixed_power = self.power_fixed()
             self.left_lcd.display(self.fixed_power)
 
             self.tunable_power = self.power_tunable()
@@ -536,7 +536,7 @@ class Chameleon(DeviceOverZeroMQ):
             self.busy = status["laser"]["busy"]
             self.tuning = status["laser"]["tuning"]
             self.lasing = status["laser"]["lasing"]
-            
+
             self.update_state_info()
             if self.lasing:
                 self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
@@ -582,9 +582,9 @@ class Chameleon(DeviceOverZeroMQ):
     def update_state_info(self):
         """Update the state info text boxes"""
         dict = {
-            "keyswitch": {1: "ON", 0: "OFF"}, 
-            "tuning": {1: "Tuning...", 0: "Tuned"}, 
-            "lasing": {1: "Lasing!", 0: "Not Lasing"}   
+            "keyswitch": {1: "ON", 0: "OFF"},
+            "tuning": {1: "Tuning...", 0: "Tuned"},
+            "lasing": {1: "Lasing!", 0: "Not Lasing"}
         }
         self.keyText.setText(dict["keyswitch"][self.keyswitch])
         self.busyText.setText(self.busy)
@@ -606,6 +606,6 @@ class Chameleon(DeviceOverZeroMQ):
 
     def switch_align_tunable(self):
         try :
-            self.set_align_tunable(0 if self.checkbox2.isChecked() else 1)                                                                                                                                                                                                                                                                      
+            self.set_align_tunable(0 if self.checkbox2.isChecked() else 1)
         except Exception as e:
             print(f"Error in switch_align_tunable: {str(e)}")
