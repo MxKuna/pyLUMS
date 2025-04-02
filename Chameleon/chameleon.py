@@ -509,7 +509,6 @@ class Chameleon(DeviceOverZeroMQ):
         """Update UI elements based on device status updates"""
         try:
             wl = status["tunable"]["wavelength"]
-            self.current_wavelength = wl
             self.wavelength_slider.setValue(wl)
             self.right_label.setText(f"{wl} nm")
 
@@ -519,11 +518,10 @@ class Chameleon(DeviceOverZeroMQ):
             self.update_align(status["laser"]["busy"])
             self.update_state_info(status["laser"])
             
-            if self.lasing:
+            if status["laser"]["lasing"]:
                 self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
             else:
                 self.red_rectangle.setStyleSheet("background-color: gray; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkgray; padding: 4px; border-radius: 10px;")
-
 
             self.fixed_power = status["fixed"]["power"]
             self.left_lcd.display(self.fixed_power)
