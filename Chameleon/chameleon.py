@@ -68,12 +68,14 @@ class ChameleonWorker(DeviceWorker):
             {
                 "wavelength": self.wavelength(),
                 "power": self.power_tunable(),
-                "shutter": self.is_shutter_open_tunable()
+                "shutter": self.is_shutter_open_tunable(),
+                "align": self.align_tunable()
             }
         d["fixed"] = \
             {
                 "power": self.power_fixed(),
-                "shutter": self.is_shutter_open_fixed()
+                "shutter": self.is_shutter_open_fixed(),
+                "align": self.align_fixed()
             }
         return d
 
@@ -187,13 +189,11 @@ class Chameleon(DeviceOverZeroMQ):
         self.busy = ""
         self.tuning = 0
         self.lasing = 0
-        self.current_wavelength = 2137
-        self.fixed_power = 2137
-        self.tunable_power = 2137
+        self.current_wavelength = "Err"
+        self.fixed_power = "Err"
+        self.tunable_power = "Err"
         self.fixed_shutter_open = False
         self.tunable_shutter_open = False
-        self.fixed_align = 0
-        self.tunable_align = 0
 
     def createDock(self, parentWidget, menu=None):
         # Create the dock widget
@@ -263,7 +263,7 @@ class Chameleon(DeviceOverZeroMQ):
         self.checkbox1 = QtWidgets.QCheckBox("FIXED")
         self.checkbox1.stateChanged.connect(lambda: self.switch_align_fixed)
         self.checkbox2 = QtWidgets.QCheckBox("TUNABLE")
-        self.checkbox2.stateChanged.connect(lambda: self.set_align_tunable(int(not self.tunable_align)))
+        self.checkbox2.stateChanged.connect(lambda: self.switch_align_tunable)
         
         checkbox_layout.addWidget(checkbox_label)
         checkbox_layout.addWidget(self.checkbox1)
@@ -475,26 +475,19 @@ class Chameleon(DeviceOverZeroMQ):
         """Initialize the UI state from device status"""
         try:
             wl = self.wavelength()
-            self.current_wavelength = wl
             self.wavelength_slider.setValue(wl)
             self.right_label.setText(f"{wl} nm")
 
             # Update shutter status
-            self.fixed_shutter_open = self.is_shutter_open_fixed()
-            self.tunable_shutter_open = self.is_shutter_open_tunable()
-            self.update_fixed_shutter_ui()
-            self.update_tunable_shutter_ui()
-
-            self.fixed_align = self.align_fixed()
-            self.tunable_align = self.align_tunable()
-            self.checkbox1.setChecked(self.fixed_align)
-            self.checkbox2.setChecked(self.tunable_align)
-            self.update_align()
+            self.update_fixed_shutter_ui(self.is_shutter_open_fixed())
+            self.update_tunable_shutter_ui(self.is_shutter_open_tunable())
 
             self.keyswitch = self.keyswitch()
             self.busy = self.busy()
             self.tuning = self.tuning()
             self.lasing = self.is_lasing()
+            
+            self.update_align(self.busy)
             
             self.update_state_info()
             if self.lasing:
@@ -521,16 +514,10 @@ class Chameleon(DeviceOverZeroMQ):
             self.right_label.setText(f"{wl} nm")
 
             # Update shutter status
-            self.fixed_shutter_open = status["fixed"]["shutter"]
-            self.tunable_shutter_open = status["tunable"]["shutter"]
-            self.update_fixed_shutter_ui()
-            self.update_tunable_shutter_ui()
+            self.update_fixed_shutter_ui(status["fixed"]["shutter"])
+            self.update_tunable_shutter_ui(status["align"]["shutter"])
 
-            self.fixed_align = self.align_fixed()
-            self.tunable_align = self.align_tunable()
-            self.checkbox1.setChecked(self.fixed_align)
-            self.checkbox2.setChecked(self.tunable_align)
-            self.update_align()
+            self.update_align(status["laser"]["busy"])
 
             self.keyswitch = status["laser"]["keyswitch"]
             self.busy = status["laser"]["busy"]
@@ -553,9 +540,9 @@ class Chameleon(DeviceOverZeroMQ):
         except Exception as e:
             print(f"Error in updateSlot: {str(e)}")
 
-    def update_fixed_shutter_ui(self):
+    def update_fixed_shutter_ui(self, status):
         """Update fixed shutter button appearance"""
-        if self.fixed_shutter_open:
+        if status:
             self.left_button.setText("OPEN")
             self.left_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: green;"
@@ -566,9 +553,9 @@ class Chameleon(DeviceOverZeroMQ):
                 "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
             )
 
-    def update_tunable_shutter_ui(self):
+    def update_tunable_shutter_ui(self, status):
         """Update tunable shutter button appearance"""
-        if self.tunable_shutter_open:
+        if status:
             self.right_button.setText("OPEN")
             self.right_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: green;"
@@ -591,25 +578,29 @@ class Chameleon(DeviceOverZeroMQ):
         self.tuningText.setText(dict["tuning"][self.tuning])
         self.lasingText.setText(dict["lasing"][self.lasing])
 
-    def update_align(self):
+    def update_align(self, status):
         """Update the alignment mode checkboxes"""
-        if self.fixed_align or self.checkbox1.isChecked() or (self.busy != "OK"):
-            self.checkbox2.setDisabled(True)
-        else:
-            self.checkbox2.setDisabled(False)
-        if self.tunable_align or self.checkbox2.isChecked():
-            self.checkbox1.setDisabled(True)
-        else:
+        if status == "OK":
             self.checkbox1.setDisabled(False)
+            self.checkbox2.setDisabled(False)
+        elif status == "Variable Alignment Mode":
+            self.checkbox1.setDisabled(True)
+            self.checkbox2.setDisabled(False)
+        elif status == "Fixed Alignment Mode":
+            self.checkbox1.setDisabled(False)
+            self.checkbox2.setDisabled(True)
+        else :
+            self.checkbox1.setDisabled(True)
+            self.checkbox2.setDisabled(True)
 
     def switch_align_fixed(self):
         try :
-            self.set_align_fixed(int(not self.fixed_align))
+            self.set_align_fixed(state == QtCore.Qt.Checked)
         except Exception as e:
             print(f"Error in switch_align_fixed: {str(e)}")
 
     def switch_align_tunable(self):
         try :
-            self.set_align_tunable(int(not self.tunable_align))
+            self.set_align_tunable(state == QtCore.Qt.Checked)
         except Exception as e:
             print(f"Error in switch_align_tunable: {str(e)}")

@@ -7,7 +7,7 @@ from PyQt5 import QtWidgets, QtCore
 from devices.zeromq_device import DeviceWorker, DeviceOverZeroMQ, remote, include_remote_methods
 
 class ShutterWorker(DeviceWorker):
-    def __init__(self, *args, hwid="USB VID:PID=0483:374B SER=0667FF343433464757221713 LOCATION=1-8:x.2", com=None, baud=115200, **kwargs):
+    def __init__(self, *args, hwid="SER=066EFF343433464757222518", com=None, baud=115200, **kwargs):
         super().__init__(*args, **kwargs)
         self.baud = baud
         self.com = com
@@ -19,7 +19,7 @@ class ShutterWorker(DeviceWorker):
         ports = list(serial.tools.list_ports.comports())
         for port in ports:
             if port.vid and port.hwid:
-                if port.hwid == self.hwid:
+                if port.hwid.__contains__(self.hwid):
                     self.com = port.device
                     self.comp = serial.Serial(self.com, self.baud, timeout=0.2)
                     self.comp.reset_input_buffer()
@@ -29,7 +29,7 @@ class ShutterWorker(DeviceWorker):
         d = super().status()
         for axis in [1, 2, 3, 4]:
             d[f"open{axis}"] = self.shutter_state(axis)
-        print(d)  # Debug print
+        # print(d)
         return d
 
     @remote
@@ -43,8 +43,8 @@ class ShutterWorker(DeviceWorker):
 
             try:
                 decoded = odp.decode('ascii', errors='replace')
-                print(f"{decoded}")
-                
+                # print(f"{decoded}")
+
                 try:
                     odp_ax = int(decoded[0:1])
                     if ax != odp_ax:
@@ -53,7 +53,7 @@ class ShutterWorker(DeviceWorker):
                     return int(decoded[2:7]) > 1100
                 except:
                     return False
-                    
+
             except Exception as e:
                 print(f"Decode Error: {e}, Raw Bytes: {odp}")
                 return False
@@ -61,7 +61,7 @@ class ShutterWorker(DeviceWorker):
     @remote
     def move_shutter(self, action, *axes):
         letters = [['q', 'a', 'z'], ['w', 's', 'x'], ['e', 'd', 'c'], ['r', 'f', 'v']]
-        
+
         with self._command_lock:
             for ax in axes:
                 match action:
@@ -74,7 +74,7 @@ class ShutterWorker(DeviceWorker):
                     case _:
                         print("Invalid action: Use 'open', 'close', or 'w_open'")
                         break
-                        
+
                 self.comp.reset_input_buffer()
                 self.comp.write(pos.encode('ascii'))
                 self.comp.flush()
@@ -93,8 +93,12 @@ class Shutter(DeviceOverZeroMQ):
         def change_shutter_state(on):
             if on:
                 self.move_shutter('w_open', number)
+                self.update_status()
+                self.update_ui()
             else:
                 self.move_shutter('close', number)
+                self.update_status()
+                self.update_ui()
         return change_shutter_state
 
     def update_status(self):
@@ -136,6 +140,6 @@ class Shutter(DeviceOverZeroMQ):
             menu.addAction(dock.toggleViewAction())
 
         # Setup timer for status updates
-        self._update_timer = QtCore.QTimer()
-        self._update_timer.timeout.connect(self.update_status)
-        self._update_timer.start(self._update_interval)
+        # self._update_timer = QtCore.QTimer()
+        # self._update_timer.timeout.connect(self.update_status)
+        # self._update_timer.start(self._update_interval)
