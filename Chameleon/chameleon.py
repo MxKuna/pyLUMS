@@ -516,6 +516,7 @@ class Chameleon(DeviceOverZeroMQ):
             # Update shutter status
             self.update_fixed_shutter_ui(status["fixed"]["shutter"])
             self.update_tunable_shutter_ui(status["align"]["shutter"])
+<<<<<<< Updated upstream
 
             self.update_align(status["laser"]["busy"])
 
@@ -523,8 +524,11 @@ class Chameleon(DeviceOverZeroMQ):
             self.busy = status["laser"]["busy"]
             self.tuning = status["laser"]["tuning"]
             self.lasing = status["laser"]["lasing"]
+=======
+            self.update_align(status["laser"]["busy"])
+            self.update_state_info(status["laser"])
+>>>>>>> Stashed changes
             
-            self.update_state_info()
             if self.lasing:
                 self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
             else:
@@ -566,17 +570,17 @@ class Chameleon(DeviceOverZeroMQ):
                 "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
             )
 
-    def update_state_info(self):
+    def update_state_info(self, status):
         """Update the state info text boxes"""
         dict = {
             "keyswitch": {1: "ON", 0: "OFF"}, 
             "tuning": {1: "Tuning...", 0: "Tuned"}, 
             "lasing": {1: "Lasing!", 0: "Not Lasing"}   
         }
-        self.keyText.setText(dict["keyswitch"][self.keyswitch])
+        self.keyText.setText(dict["keyswitch"][status["keyswitch"]])
         self.busyText.setText(self.busy)
-        self.tuningText.setText(dict["tuning"][self.tuning])
-        self.lasingText.setText(dict["lasing"][self.lasing])
+        self.tuningText.setText(dict["tuning"][status["tuning"]])
+        self.lasingText.setText(dict["lasing"][status["lasing"]])
 
     def update_align(self, status):
         """Update the alignment mode checkboxes"""
