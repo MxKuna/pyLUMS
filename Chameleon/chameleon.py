@@ -516,18 +516,8 @@ class Chameleon(DeviceOverZeroMQ):
             # Update shutter status
             self.update_fixed_shutter_ui(status["fixed"]["shutter"])
             self.update_tunable_shutter_ui(status["align"]["shutter"])
-<<<<<<< Updated upstream
-
-            self.update_align(status["laser"]["busy"])
-
-            self.keyswitch = status["laser"]["keyswitch"]
-            self.busy = status["laser"]["busy"]
-            self.tuning = status["laser"]["tuning"]
-            self.lasing = status["laser"]["lasing"]
-=======
             self.update_align(status["laser"]["busy"])
             self.update_state_info(status["laser"])
->>>>>>> Stashed changes
             
             if self.lasing:
                 self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
