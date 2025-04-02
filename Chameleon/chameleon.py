@@ -474,11 +474,10 @@ class Chameleon(DeviceOverZeroMQ):
     def update_ui_from_device(self):
         """Initialize the UI state from device status"""
         try:
-            wl = self.wavelength()
+            wl = 777 #self.wavelength()
             self.wavelength_slider.setValue(wl)
             self.right_label.setText(f"{wl} nm")
 
-            # Update shutter status
             self.update_fixed_shutter_ui(self.is_shutter_open_fixed())
             self.update_tunable_shutter_ui(self.is_shutter_open_tunable())
 
@@ -512,7 +511,6 @@ class Chameleon(DeviceOverZeroMQ):
             self.wavelength_slider.setValue(wl)
             self.right_label.setText(f"{wl} nm")
 
-            # Update shutter status
             self.update_fixed_shutter_ui(status["fixed"]["shutter"])
             self.update_tunable_shutter_ui(status["align"]["shutter"])
             self.update_align(status["laser"]["busy"])
