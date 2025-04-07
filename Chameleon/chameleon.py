@@ -185,15 +185,8 @@ class Chameleon(DeviceOverZeroMQ):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Default values for GUI display
-        self.keyswitch = 0
-        self.busy = ""
-        self.tuning = 0
-        self.lasing = 0
-        self.current_wavelength = "Err"
-        self.fixed_power = "Err"
-        self.tunable_power = "Err"
-        self.fixed_shutter_open = False
-        self.tunable_shutter_open = False
+        self._fixed_shutter_open = 0
+        self._tunable_shutter_open = 0
 
     def createDock(self, parentWidget, menu=None):
         # Create the dock widget
@@ -217,22 +210,22 @@ class Chameleon(DeviceOverZeroMQ):
         grid_layout = QGridLayout()
         
         # Create 2x2 grid of groups
-        self.keyText = QLineEdit("placeholder")
-        self.busyText = QLineEdit("placeholder")
-        self.tuningText = QLineEdit("placeholder")
-        self.lasingText = QLineEdit("placeholder")
+        self.keyText = QLineEdit("Err")
+        self.busyText = QLineEdit("Err")
+        self.tuningText = QLineEdit("Err")
+        self.lasingText = QLineEdit("Err")
         gridTexts = [self.keyText, self.busyText, self.tuningText, self.lasingText]
         
-        group_names = {
-            "KEYSWITCH": self.keyswitch, 
-            "BUSY": self.busy, 
-            "TUNING": self.tuning, 
-            "LASING": self.lasing   
-        }
+        group_names = [
+            "KEYSWITCH",
+            "BUSY",
+            "TUNING",
+            "LASING"
+        ]
 
         for i in range(2):
             for j in range(2):
-                sub_group = QGroupBox(list(group_names.keys())[i*2 + j])
+                sub_group = QGroupBox(group_names[i*2 + j])
                 sub_group_layout = QVBoxLayout()
                 
                 sub_group_text_box = gridTexts[i*2 + j]
@@ -261,9 +254,9 @@ class Chameleon(DeviceOverZeroMQ):
         
         # Two Checkboxes
         self.checkbox1 = QtWidgets.QCheckBox("FIXED")
-        self.checkbox1.stateChanged.connect(lambda: self.switch_align_fixed)
+        self.checkbox1.stateChanged.connect(lambda state: self.set_align_fixed(1 if state == QtCore.Qt.Checked else 0))
         self.checkbox2 = QtWidgets.QCheckBox("TUNABLE")
-        self.checkbox2.stateChanged.connect(lambda: self.switch_align_tunable)
+        self.checkbox2.stateChanged.connect(lambda state: self.set_align_tunable(1 if state == QtCore.Qt.Checked else 0))
         
         checkbox_layout.addWidget(checkbox_label)
         checkbox_layout.addWidget(self.checkbox1)
@@ -312,7 +305,7 @@ class Chameleon(DeviceOverZeroMQ):
         
         self.left_button = QPushButton("OPEN")
         self.left_button.setMinimumHeight(32)
-        self.left_button.clicked.connect(lambda: self.open_shutter_fixed(not self.fixed_shutter_open))
+        self.left_button.clicked.connect(lambda: self.open_shutter_fixed(not self._fixed_shutter_open))
         
         left_subgroup_layout.addWidget(left_label)
         left_subgroup_layout.addWidget(self.left_lcd)
@@ -323,7 +316,7 @@ class Chameleon(DeviceOverZeroMQ):
         right_subgroup = QGroupBox("TUNABLE")
         right_subgroup_layout = QVBoxLayout()
         
-        self.right_label = QLabel(f"{self.current_wavelength} nm")
+        self.right_label = QLabel("Err nm")
         self.right_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         self.right_label.setAlignment(Qt.AlignCenter)
         self.right_lcd = QLCDNumber()
@@ -333,7 +326,7 @@ class Chameleon(DeviceOverZeroMQ):
         self.right_lcd.display("ERR")
         
         self.right_button = QPushButton("OPEN")
-        self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self.tunable_shutter_open))
+        self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self._tunable_shutter_open))
         self.right_button.setMinimumHeight(32)
         
         right_subgroup_layout.addWidget(self.right_label)
@@ -435,10 +428,9 @@ class Chameleon(DeviceOverZeroMQ):
             menu.addAction(dock.toggleViewAction())
 
         print("\t --INITIALIZING--")
-        self.update_ui_from_device()
+        self.createListenerThread(self.updateSlot)
         print("\t --DONE--")
 
-        self.createListenerThread(self.updateSlot)
 
     def set_wavelength_with_safety(self, wavelength=None):
         """
@@ -448,7 +440,6 @@ class Chameleon(DeviceOverZeroMQ):
             wavelength (int, optional): Wavelength to set. If None, reads from input box.
         """
         try:
-            # Use input box value if no wavelength provided
             if wavelength is None:
                 wavelength = int(self.wavelength_input.text())
             
@@ -461,7 +452,6 @@ class Chameleon(DeviceOverZeroMQ):
                 )
                 return
             
-            # Set wavelength via remote method
             self.set_wavelength(wavelength)
         
         except ValueError:
@@ -471,39 +461,6 @@ class Chameleon(DeviceOverZeroMQ):
                 "Please enter a valid integer wavelength."
         )
 
-    def update_ui_from_device(self):
-        """Initialize the UI state from device status"""
-        try:
-            wl = 777 #self.wavelength()
-            self.wavelength_slider.setValue(wl)
-            self.right_label.setText(f"{wl} nm")
-
-            self.update_fixed_shutter_ui(self.is_shutter_open_fixed())
-            self.update_tunable_shutter_ui(self.is_shutter_open_tunable())
-
-            self.keyswitch = self.keyswitch()
-            self.busy = self.busy()
-            self.tuning = self.tuning()
-            self.lasing = self.is_lasing()
-            
-            self.update_align(self.busy)
-            
-            self.update_state_info()
-            if self.lasing:
-                self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
-            else:
-                self.red_rectangle.setStyleSheet("background-color: gray; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkgray; padding: 4px; border-radius: 10px;")
-
-
-            self.fixed_power = self.power_fixed() 
-            self.left_lcd.display(self.fixed_power)
-
-            self.tunable_power = self.power_tunable()
-            self.right_lcd.display(self.tunable_power)
-
-        except Exception as e:
-            print(f"Error initializing UI from device: {str(e)}")
-
     def updateSlot(self, status):
         """Update UI elements based on device status updates"""
         try:
@@ -512,85 +469,74 @@ class Chameleon(DeviceOverZeroMQ):
             self.right_label.setText(f"{wl} nm")
 
             self.update_fixed_shutter_ui(status["fixed"]["shutter"])
-            self.update_tunable_shutter_ui(status["align"]["shutter"])
-            self.update_align(status["laser"]["busy"])
-            self.update_state_info(status["laser"])
-            
+            self.update_tunable_shutter_ui(status["tunable"]["shutter"])
+            self.update_align(status["laser"]["busy"], status["tunable"]["align"], status["fixed"]["align"])
+            self.update_state_info(status["laser"]) 
+
             if status["laser"]["lasing"]:
                 self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
             else:
                 self.red_rectangle.setStyleSheet("background-color: gray; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkgray; padding: 4px; border-radius: 10px;")
 
-            self.fixed_power = status["fixed"]["power"]
-            self.left_lcd.display(self.fixed_power)
-
-            self.tunable_power = status["tunable"]["power"]
-            self.right_lcd.display(self.tunable_power)
+            self.left_lcd.display(status["fixed"]["power"])
+            self.right_lcd.display(status["tunable"]["power"])
 
         except Exception as e:
             print(f"Error in updateSlot: {str(e)}")
 
-    def update_fixed_shutter_ui(self, status):
+    def update_fixed_shutter_ui(self, s):
         """Update fixed shutter button appearance"""
-        if status:
+        if s:
+            self._fixed_shutter_open = 1
             self.left_button.setText("OPEN")
             self.left_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: green;"
             )
         else:
+            self._fixed_shutter_open = 0
             self.left_button.setText("CLOSED")
             self.left_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
             )
 
-    def update_tunable_shutter_ui(self, status):
+    def update_tunable_shutter_ui(self, s):
         """Update tunable shutter button appearance"""
-        if status:
+        if s:
+            self._tunable_shutter_open = 1
             self.right_button.setText("OPEN")
             self.right_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: green;"
             )
         else:
+            self._tunable_shutter_open = 0
             self.right_button.setText("CLOSED")
             self.right_button.setStyleSheet(
                 "color: white; font-weight: bold; font-size: 14px; background-color: gray;"
             )
 
-    def update_state_info(self, status):
+    def update_state_info(self, s):
         """Update the state info text boxes"""
         dict = {
             "keyswitch": {1: "ON", 0: "OFF"}, 
             "tuning": {1: "Tuning...", 0: "Tuned"}, 
             "lasing": {1: "Lasing!", 0: "Not Lasing"}   
         }
-        self.keyText.setText(dict["keyswitch"][status["keyswitch"]])
-        self.busyText.setText(self.busy)
-        self.tuningText.setText(dict["tuning"][status["tuning"]])
-        self.lasingText.setText(dict["lasing"][status["lasing"]])
+        self.keyText.setText(dict["keyswitch"][s["keyswitch"]])
+        self.busyText.setText(s["busy"])
+        self.tuningText.setText(dict["tuning"][s["tuning"]])
+        self.lasingText.setText(dict["lasing"][s["lasing"]])
 
-    def update_align(self, status):
+    def update_align(self, s, ta, fa):
         """Update the alignment mode checkboxes"""
-        if status == "OK":
+        if s == "OK" and ta == 0 and fa == 0:
             self.checkbox1.setDisabled(False)
             self.checkbox2.setDisabled(False)
-        elif status == "Variable Alignment Mode":
+        elif s == "Variable Alignment Mode" and ta == 1 and fa == 0:
             self.checkbox1.setDisabled(True)
             self.checkbox2.setDisabled(False)
-        elif status == "Fixed Alignment Mode":
+        elif s == "Fixed Alignment Mode" and ta == 0 and fa == 1:
             self.checkbox1.setDisabled(False)
             self.checkbox2.setDisabled(True)
-        else :
+        else:
             self.checkbox1.setDisabled(True)
             self.checkbox2.setDisabled(True)
-
-    def switch_align_fixed(self):
-        try :
-            self.set_align_fixed(state == QtCore.Qt.Checked)
-        except Exception as e:
-            print(f"Error in switch_align_fixed: {str(e)}")
-
-    def switch_align_tunable(self):
-        try :
-            self.set_align_tunable(state == QtCore.Qt.Checked)
-        except Exception as e:
-            print(f"Error in switch_align_tunable: {str(e)}")
