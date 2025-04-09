@@ -39,7 +39,16 @@ void handleServoCommand(char cmd) {
     case 'q': servo1.writeMicroseconds(1100); servo_positions[0] = 1100; break;
     case 'a': servo1.writeMicroseconds(1400); servo_positions[0] = 1400; break;
     case 'z': servo1.writeMicroseconds(1700); servo_positions[0] = 1700; break;
-    // Repeat for other servos...
+    case 's': servo2.writeMicroseconds(1400); servo_positions[1] = 1400; break;
+    case 'x': servo2.writeMicroseconds(1700); servo_positions[1] = 1700; break;
+    case 'w': servo2.writeMicroseconds(1100); servo_positions[1] = 1100; break;
+    case 'e': servo3.writeMicroseconds(1100); servo_positions[2] = 1100; break;
+    case 'd': servo3.writeMicroseconds(1400); servo_positions[2] = 1400; break;
+    case 'c': servo3.writeMicroseconds(1700); servo_positions[2] = 1700; break;
+    case 'r': serv4.writeMicroseconds(1100); servo_positions[3] = 1100; break;
+    case 'f': serv4.writeMicroseconds(1400); servo_positions[3] = 1400; break;
+    case 'v': serv4.writeMicroseconds(1700); servo_positions[3] = 1700; break;
+    
   }
 }
 
