@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QFont
-from PyQt5.QtWidgets import (QApplication, QDialog, QDockWidget, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLCDNumber, QLabel, QLineEdit, QMainWindow, QMenuBar, QMessageBox, QPushButton, QSlider, QTabWidget, QVBoxLayout, QWidget)
+import scipy.optimize
 from devices import H_C, N_AIR
 from devices.zeromq_device import (
 	DeviceOverZeroMQ,
@@ -11,153 +8,11 @@ from devices.zeromq_device import (
 	include_remote_methods,
 	remote,
 )
+from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtWidgets import (QApplication, QDialog, QDockWidget, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QInputDialog, QLCDNumber, QLabel, QLineEdit, QMainWindow, QMenuBar, QMessageBox, QPushButton, QSlider, QTabWidget, QVBoxLayout, QWidget)
 
-
-class ChameleonWorker(DeviceWorker):
-	def __init__(self, port, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.port = port
-
-	def init_device(self):
-		from pyvisa import ResourceManager
-		rm = ResourceManager()
-		self.handle = rm.open_resource(self.port)
-		self.handle.baud_rate = 19200
-		self.handle.write_termination = '\r\n'
-		self.handle.read_termination = '\r\n'
-
-		print("Checking communication: ")
-		self.query("?L")  # would raise an exception if communication failed
-		print("OK")
-
-	def __del__(self):
-		self.ser.close()  # serial port close
-
-	def status(self):
-		d = super().status()
-		d["laser"] = \
-			{
-				"keyswitch": self.keyswitch(),
-				"busy":      self.busy(),
-				"tuning":    self.tuning(),
-				"lasing":    self.is_lasing()
-			}
-		d["tunable"] = \
-			{
-				"wavelength": self.wavelength(),
-				"power":      self.power_tunable(),
-				"shutter":    self.is_shutter_open_tunable(),
-				"align":      self.align_tunable()
-			}
-		d["fixed"] = \
-			{
-				"power":   self.power_fixed(),
-				"shutter": self.is_shutter_open_fixed(),
-				"align":   self.align_fixed()
-			}
-		return d
-
-	@remote
-	def query(self, command):
-		res = self.handle.query(command)
-		if not res.startswith(command):
-			raise Exception("No connection to laser or ECHO is OFF")
-		res = res[len(command):].strip()
-		return res
-
-	@remote
-	def wavelength(self):
-		return int(self.query('?VW'))
-
-	@remote
-	def set_wavelength(self, nm):
-		self.query(f"WV={int(nm)}")
-
-	@remote
-	def open_shutter_tunable(self, ok=True):
-		if ok:
-			self.query("SVAR=1")
-		else:
-			self.close_shutter_tunable()
-
-	@remote
-	def close_shutter_tunable(self):
-		self.query("SVAR=0")
-
-	@remote
-	def is_shutter_open_tunable(self):
-		return int(self.query("?SVAR")) == 1
-
-	@remote
-	def open_shutter_fixed(self, ok=True):
-		if ok:
-			self.query("SFIXED=1")
-		else:
-			self.close_shutter_fixed()
-
-	@remote
-	def close_shutter_fixed(self):
-		self.query("SFIXED=0")
-
-	@remote
-	def is_shutter_open_fixed(self):
-		return int(self.query("?SFIXED")) == 1
-
-	@remote
-	def is_lasing(self):
-		return int(self.query("?L")) == 1
-
-	@remote
-	def set_laser_state(self, state):
-		if state:
-			self.query("L=1")
-		else:
-			self.query("L=0")
-
-	@remote
-	def power_tunable(self):
-		return int(self.query("?PVAR"))
-
-	@remote
-	def power_fixed(self):
-		return int(self.query("?PFIXED"))
-
-	@remote
-	def busy(self):
-		return str(self.query("?ST"))
-
-	@remote
-	def keyswitch(self) -> int:
-		'''Returns the current keyswitch position: 1-ON and 0-OFF'''
-		return int(self.query("?K"))
-
-	@remote
-	def tuning(self) -> int:
-		'''Returns the tuning staus: 1-Tuning and 0-Completed tune'''
-		return int(self.query("?TS"))
-
-	@remote
-	def align_tunable(self) -> int:
-		'''Returns the alignment mode status: 1-Enabled and 0-Disabled'''
-		return int(self.query("?ALIGNVAR"))
-
-	@remote
-	def align_fixed(self) -> int:
-		'''Returns the alignment mode status: 1-Enabled and 0-Disabled'''
-		return int(self.query("?ALIGNFIXED"))
-
-	@remote
-	def set_align_tunable(self, state: int):
-		'''Sets the alignment mode status: 1-Enabled and 0-Disabled'''
-		self.query(f"ALIGNVAR={state}")
-
-	@remote
-	def set_align_fixed(self, state: int):
-		'''Sets the alignment mode status: 1-Enabled and 0-Disabled'''
-		self.query(f"ALIGNFIXED={state}")
-
-
-@include_remote_methods(ChameleonWorker)
 class ChameleonWorker(DeviceWorker):
 	def __init__(self, port, *args, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -340,11 +195,11 @@ class Chameleon(DeviceOverZeroMQ):
 		self.red_rectangle = QLabel("LASING!")
 		self.red_rectangle.setAlignment(Qt.AlignCenter)
 		self.red_rectangle.setStyleSheet("""
-            background-color: red; 
-            color: white; 
-            font-weight: bold; 
-            font-size: 20px; 
-            border: 3px solid darkred; 
+            background-color: red;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+            border: 3px solid darkred;
             padding: 4px;
             border-radius: 10px;
         """)
@@ -355,11 +210,11 @@ class Chameleon(DeviceOverZeroMQ):
 		self.wavelength_indicator = QLabel("")
 		self.wavelength_indicator.setAlignment(Qt.AlignCenter)
 		self.wavelength_indicator.setStyleSheet("""
-		    background-color: white; 
-		    color: black; 
-		    font-weight: bold; 
-		    font-size: 20px; 
-		    border: 3px solid red; 
+		    background-color: white;
+		    color: black;
+		    font-weight: bold;
+		    font-size: 20px;
+		    border: 3px solid red;
 		    padding: 4px;
 		    border-radius: 10px;
 		""")
@@ -374,39 +229,39 @@ class Chameleon(DeviceOverZeroMQ):
 		# Fixed shutter control
 		fixed_group = QGroupBox("FIXED (1030 nm)")
 		fixed_layout = QVBoxLayout()
-		
+
 		self.left_lcd = QLCDNumber()
 		self.left_lcd.setDigitCount(5)
 		self.left_lcd.setStyleSheet("color: blue; background-color: black;")
 		self.left_lcd.setMinimumHeight(40)
 		self.left_lcd.display("ERR")
-		
+
 		self.left_button = QPushButton("OPEN")
 		self.left_button.setMinimumHeight(32)
 		self.left_button.clicked.connect(lambda: self.open_shutter_fixed(not self._fixed_shutter_open))
-		
+
 		fixed_layout.addWidget(self.left_lcd)
 		fixed_layout.addWidget(self.left_button)
 		fixed_group.setLayout(fixed_layout)
-		
+
 		# Tunable shutter control
 		tunable_group = QGroupBox("TUNABLE")
 		tunable_layout = QVBoxLayout()
-		
+
 		self.right_lcd = QLCDNumber()
 		self.right_lcd.setDigitCount(5)
 		self.right_lcd.setStyleSheet("color: green; background-color: black;")
 		self.right_lcd.setMinimumHeight(40)
 		self.right_lcd.display("ERR")
-		
+
 		self.right_button = QPushButton("OPEN")
 		self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self._tunable_shutter_open))
 		self.right_button.setMinimumHeight(32)
-		
+
 		tunable_layout.addWidget(self.right_lcd)
 		tunable_layout.addWidget(self.right_button)
 		tunable_group.setLayout(tunable_layout)
-		
+
 		# Create a horizontal layout for the two beam controls
 		beam_controls_layout = QHBoxLayout()
 		beam_controls_layout.addWidget(fixed_group)
@@ -571,6 +426,8 @@ class Chameleon(DeviceOverZeroMQ):
 			menu.addAction(dock.toggleViewAction())
 
 		print("\t --INITIALIZING--")
+		self.initial_check()
+		# print(self.status())
 		self.createListenerThread(self.updateSlot)
 		print("\t --DONE--")
 
@@ -660,7 +517,7 @@ class Chameleon(DeviceOverZeroMQ):
 		"""Update the state info buttons"""
 		dict = {
 			"keyswitch": {1: "ON", 0: "OFF"},
-			"tuning":    {1: "Tuning...", 0: "Tuned"},
+			"tuning":    {1: "Tuning", 0: "Tuned"},
 			"lasing":    {1: "Lasing!", 0: "Not Lasing"}
 		}
 
@@ -668,7 +525,7 @@ class Chameleon(DeviceOverZeroMQ):
 		color_dict = {
 			"keyswitch": {1: "#90EE90", 0: "#FFB6C1"},  # Light green for ON, light pink for OFF
 			"tuning":    {1: "#FFD700", 0: "#90EE90"},  # Gold for Tuning, light green for Tuned
-			"lasing":    {1: "#FF6347", 0: "#D3D3D3"}   # Tomato for Lasing, light gray for Not Lasing
+			"lasing":    {1: "#90EE90", 0: "#D3D3D3"}   # Tomato for Lasing, light gray for Not Lasing
 		}
 
 		# Update keyswitch text and color
@@ -678,7 +535,7 @@ class Chameleon(DeviceOverZeroMQ):
 		# Update busy text
 		self.busyText.setText(s["busy"])
 		# For busy text, we could set a default color or change based on specific busy messages
-		if s["busy"] == "OK":
+		if s["busy"] in ("OK", "Fixed Alignment Mode", "Variable Alignment Mode"):
 			self.busyText.setStyleSheet("QPushButton { background-color: #90EE90; color: black; font-weight: bold; text-align: center; }")  # Light green for OK
 		else:
 			self.busyText.setStyleSheet("QPushButton { background-color: #FFD700; color: black; font-weight: bold; text-align: center; }")  # Gold for other states
@@ -705,3 +562,10 @@ class Chameleon(DeviceOverZeroMQ):
 		else:
 			self.checkbox_fixed.setDisabled(True)
 			self.checkbox_tunable.setDisabled(True)
+
+	def initial_check(self):
+		s = self.status()
+		if s["laser"]["busy"] == "Fixed Alignment Mode":
+			self.checkbox_fixed.setChecked(True)
+		elif s["laser"]["busy"] == "Variable Alignment Mode":
+			self.checkbox_tunable.setChecked(True)
