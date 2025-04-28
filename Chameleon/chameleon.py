@@ -200,21 +200,12 @@ class Chameleon(DeviceOverZeroMQ):
 		self.red_rectangle = QLabel("LASING!")
 		self.red_rectangle.setAlignment(Qt.AlignCenter)
 		self.red_rectangle.setStyleSheet("""
-<<<<<<< HEAD
             background-color: darkred;
             color: white;
             font-weight: bold;
             font-size: 18px;
             border: 2px solid darkred;
             padding: 1px;
-=======
-            background-color: red;
-            color: white;
-            font-weight: bold;
-            font-size: 20px;
-            border: 3px solid darkred;
-            padding: 4px;
->>>>>>> c905bcab01f1cdd21f237fe9a014c8af5d1f3ed8
             border-radius: 10px;
 
         """)
@@ -226,19 +217,11 @@ class Chameleon(DeviceOverZeroMQ):
 		self.wavelength_indicator.setAlignment(Qt.AlignCenter)
 		self.wavelength_indicator.setStyleSheet("""
 		    background-color: white;
-<<<<<<< HEAD
 		    color: red;
 		    font-weight: bold;
 		    font-size: 18px;
 		    border: 2px solid black;
 		    padding: 1px;
-=======
-		    color: black;
-		    font-weight: bold;
-		    font-size: 20px;
-		    border: 3px solid red;
-		    padding: 4px;
->>>>>>> c905bcab01f1cdd21f237fe9a014c8af5d1f3ed8
 		    border-radius: 10px;
 		""")
 		self.wavelength_indicator.setMinimumHeight(25)
@@ -252,10 +235,7 @@ class Chameleon(DeviceOverZeroMQ):
 		# Fixed shutter control
 		fixed_group = QGroupBox("FIXED (1030 nm)")
 		fixed_layout = QVBoxLayout()
-<<<<<<< HEAD
 		fixed_layout.setContentsMargins(2, 2, 2, 2)
-=======
->>>>>>> c905bcab01f1cdd21f237fe9a014c8af5d1f3ed8
 
 		self.left_lcd = QLCDNumber()
 		self.left_lcd.setDigitCount(5)
@@ -276,10 +256,7 @@ class Chameleon(DeviceOverZeroMQ):
 		# Tunable shutter control
 		tunable_group = QGroupBox("TUNABLE")
 		tunable_layout = QVBoxLayout()
-<<<<<<< HEAD
 		tunable_layout.setContentsMargins(2, 2, 2, 2)
-=======
->>>>>>> c905bcab01f1cdd21f237fe9a014c8af5d1f3ed8
 
 		self.right_lcd = QLCDNumber()
 		self.right_lcd.setDigitCount(5)
@@ -290,12 +267,8 @@ class Chameleon(DeviceOverZeroMQ):
 
 		self.right_button = QPushButton("OPEN")
 		self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self._tunable_shutter_open))
-<<<<<<< HEAD
 		self.right_button.setMinimumHeight(25)
 		self.right_button.setMaximumHeight(90)
-=======
-		self.right_button.setMinimumHeight(32)
->>>>>>> c905bcab01f1cdd21f237fe9a014c8af5d1f3ed8
 
 		tunable_layout.addWidget(self.right_lcd)
 		tunable_layout.addWidget(self.right_button)
@@ -614,8 +587,4 @@ class Chameleon(DeviceOverZeroMQ):
 		if s["laser"]["busy"] == "Fixed Alignment Mode":
 			self.checkbox_fixed.setChecked(True)
 		elif s["laser"]["busy"] == "Variable Alignment Mode":
-<<<<<<< HEAD
 			self.checkbox_tunable.setChecked(True)
-=======
-			self.checkbox_tunable.setChecked(True)
->>>>>>> c905bcab01f1cdd21f237fe9a014c8af5d1f3ed8
