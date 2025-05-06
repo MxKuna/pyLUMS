@@ -237,7 +237,7 @@ class Shutter(DeviceOverZeroMQ):
 			row_layout = QtWidgets.QHBoxLayout()
 
 			# Create label with servo number
-			label = QtWidgets.QLabel(f"Servo {axis}")
+			label = QtWidgets.QLabel(f"{axis}")
 			label.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Preferred)
 			row_layout.addWidget(label)
 
