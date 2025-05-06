@@ -174,51 +174,57 @@ class Chameleon(DeviceOverZeroMQ):
 
 		# Create the main horizontal layout with 2:1 ratio
 		main_layout = QHBoxLayout()
+		main_layout.setContentsMargins(2, 2, 2, 2)
 
 		# Create two columns
 		left_column = QWidget()
 		right_column = QWidget()
 
 		left_column_layout = QVBoxLayout()
+		left_column_layout.setContentsMargins(2, 2, 2, 2)
 		right_column_layout = QVBoxLayout()
+		right_column_layout.setContentsMargins(2, 2, 2, 2)
 
-		# Set stretch factor for the columns (2:1 ratio)
-		main_layout.addWidget(left_column, 2)
-		main_layout.addWidget(right_column, 1)
+		# Set stretch factor for the columns (5:2 ratio)
+		main_layout.addWidget(left_column, 5)
+		main_layout.addWidget(right_column, 2)
+		main_layout.setSpacing(1)
 
 		# ===== LEFT COLUMN: Beam Control and Wavelength Control =====
 
 		# Create the indicators row at the top
 		indicators_layout = QHBoxLayout()
+		indicators_layout.setContentsMargins(2, 2, 2, 2)
 
 		# Create the lasing indicator (half width)
 		self.red_rectangle = QLabel("LASING!")
 		self.red_rectangle.setAlignment(Qt.AlignCenter)
 		self.red_rectangle.setStyleSheet("""
-            background-color: red;
+            background-color: darkred;
             color: white;
             font-weight: bold;
-            font-size: 20px;
-            border: 3px solid darkred;
-            padding: 4px;
+            font-size: 18px;
+            border: 2px solid darkred;
+            padding: 1px;
             border-radius: 10px;
+
         """)
-		self.red_rectangle.setMinimumHeight(35)
+		self.red_rectangle.setMinimumHeight(25)
 		self.red_rectangle.setMaximumHeight(35)
 
 		# Create the wavelength indicator
-		self.wavelength_indicator = QLabel("")
+		self.wavelength_indicator = QLabel("ERR")
 		self.wavelength_indicator.setAlignment(Qt.AlignCenter)
 		self.wavelength_indicator.setStyleSheet("""
 		    background-color: white;
-		    color: black;
+		    color: red;
 		    font-weight: bold;
-		    font-size: 20px;
-		    border: 3px solid red;
-		    padding: 4px;
+		    font-size: 18px;
+		    border: 2px solid black;
+		    padding: 1px;
 		    border-radius: 10px;
 		""")
-		self.wavelength_indicator.setMinimumHeight(35)
+		self.wavelength_indicator.setMinimumHeight(25)
 		self.wavelength_indicator.setMaximumHeight(35)
 
 		# Add both indicators to the layout
@@ -229,15 +235,18 @@ class Chameleon(DeviceOverZeroMQ):
 		# Fixed shutter control
 		fixed_group = QGroupBox("FIXED (1030 nm)")
 		fixed_layout = QVBoxLayout()
+		fixed_layout.setContentsMargins(2, 2, 2, 2)
 
 		self.left_lcd = QLCDNumber()
 		self.left_lcd.setDigitCount(5)
 		self.left_lcd.setStyleSheet("color: blue; background-color: black;")
-		self.left_lcd.setMinimumHeight(40)
+		self.left_lcd.setMinimumHeight(35)
+		self.left_lcd.setMaximumHeight(115)
 		self.left_lcd.display("ERR")
 
 		self.left_button = QPushButton("OPEN")
-		self.left_button.setMinimumHeight(32)
+		self.left_button.setMinimumHeight(25)
+		self.left_button.setMaximumHeight(90)
 		self.left_button.clicked.connect(lambda: self.open_shutter_fixed(not self._fixed_shutter_open))
 
 		fixed_layout.addWidget(self.left_lcd)
@@ -247,16 +256,19 @@ class Chameleon(DeviceOverZeroMQ):
 		# Tunable shutter control
 		tunable_group = QGroupBox("TUNABLE")
 		tunable_layout = QVBoxLayout()
+		tunable_layout.setContentsMargins(2, 2, 2, 2)
 
 		self.right_lcd = QLCDNumber()
 		self.right_lcd.setDigitCount(5)
 		self.right_lcd.setStyleSheet("color: green; background-color: black;")
-		self.right_lcd.setMinimumHeight(40)
+		self.right_lcd.setMinimumHeight(35)
+		self.right_lcd.setMaximumHeight(115)
 		self.right_lcd.display("ERR")
 
 		self.right_button = QPushButton("OPEN")
 		self.right_button.clicked.connect(lambda: self.open_shutter_tunable(not self._tunable_shutter_open))
-		self.right_button.setMinimumHeight(32)
+		self.right_button.setMinimumHeight(25)
+		self.right_button.setMaximumHeight(90)
 
 		tunable_layout.addWidget(self.right_lcd)
 		tunable_layout.addWidget(self.right_button)
@@ -270,6 +282,7 @@ class Chameleon(DeviceOverZeroMQ):
 		# 2. Create the Wavelength Control section
 		wavelength_group = QGroupBox("Wavelength Control")
 		wavelength_layout = QVBoxLayout()
+		wavelength_layout.setContentsMargins(2, 2, 2, 2)
 
 		# Wavelength input row
 		input_row = QHBoxLayout()
@@ -277,9 +290,11 @@ class Chameleon(DeviceOverZeroMQ):
 		wavelength_label.setStyleSheet("font-weight: bold; font-size: 14px;")
 		self.wavelength_input = QLineEdit()
 		self.wavelength_input.setPlaceholderText("Enter wavelength (680-1030)")
-		self.wavelength_input.setMinimumHeight(30)
+		self.wavelength_input.setMinimumHeight(25)
+		self.wavelength_input.setMaximumHeight(60)
 		self.wavelength_set_button = QPushButton("SET")
-		self.wavelength_set_button.setMinimumHeight(30)
+		self.wavelength_set_button.setMinimumHeight(25)
+		self.wavelength_set_button.setMaximumHeight(60)
 		self.wavelength_set_button.clicked.connect(lambda: self.set_wavelength_with_safety())
 
 		input_row.addWidget(wavelength_label)
@@ -311,7 +326,8 @@ class Chameleon(DeviceOverZeroMQ):
 
 		for label, value in preset_buttons:
 			preset_btn = QPushButton(label)
-			preset_btn.setMinimumHeight(30)
+			preset_btn.setMinimumHeight(20)
+			preset_btn.setMaximumHeight(35)
 			preset_btn.clicked.connect(lambda _, v=value: self.set_wavelength_with_safety(v))
 			preset_row.addWidget(preset_btn)
 
@@ -322,17 +338,18 @@ class Chameleon(DeviceOverZeroMQ):
 		wavelength_group.setLayout(wavelength_layout)
 
 		# Add components to left column layout
-		left_column_layout.addLayout(indicators_layout)
-		left_column_layout.addLayout(beam_controls_layout)
+		left_column_layout.addLayout(indicators_layout, 1)
+		left_column_layout.addLayout(beam_controls_layout, 2)
 		left_column_layout.addWidget(wavelength_group, 1)
 		left_column.setLayout(left_column_layout)
 
 		# ===== RIGHT COLUMN: State Information =====
-		right_column_layout.setSpacing(15)  # Add spacing between elements
+		right_column_layout.setSpacing(5)  # Add spacing between elements
 
 		# 1. Laser State Information
 		state_info_group = QGroupBox("Laser State Information")
 		state_info_layout = QVBoxLayout()
+		state_info_layout.setContentsMargins(2, 2, 2, 2)
 
 		# Create button indicators instead of text fields
 		self.keyText = QPushButton("Err")
@@ -360,7 +377,7 @@ class Chameleon(DeviceOverZeroMQ):
 
 		# Create grid for status indicators
 		status_grid = QGridLayout()
-		status_grid.setVerticalSpacing(10)  # Add some spacing between rows
+		status_grid.setVerticalSpacing(5)  # Add some spacing between rows
 
 		for i, (label, text_field) in enumerate(status_indicators):
 			# Create label
@@ -372,6 +389,7 @@ class Chameleon(DeviceOverZeroMQ):
 			text_field.setEnabled(False)  # Make it non-clickable
 			text_field.setFocusPolicy(Qt.NoFocus)  # Prevent focus
 			text_field.setCursor(Qt.ArrowCursor)  # Normal cursor instead of hand
+			text_field.setMinimumHeight(15)
 			text_field.setStyleSheet(status_style)
 
 			# Set size policy to make the button expand vertically
@@ -394,6 +412,7 @@ class Chameleon(DeviceOverZeroMQ):
 		# 2. Alignment Mode control (moved from left column)
 		align_group = QGroupBox("Alignment Mode")
 		align_layout = QVBoxLayout()
+		align_layout.setContentsMargins(2, 2, 2, 2)
 
 		checkboxes_layout = QHBoxLayout()
 		self.checkbox_fixed = QtWidgets.QCheckBox("FIXED")
@@ -408,7 +427,7 @@ class Chameleon(DeviceOverZeroMQ):
 		align_group.setLayout(align_layout)
 
 		# Add components to right column layout with equal stretch
-		right_column_layout.addWidget(state_info_group, 3)
+		right_column_layout.addWidget(state_info_group, 4)
 		right_column_layout.addWidget(align_group, 1)
 		right_column.setLayout(right_column_layout)
 
@@ -459,7 +478,7 @@ class Chameleon(DeviceOverZeroMQ):
 					"Input Error",
 					"Please enter a valid integer wavelength."
 			)
-
+    
 	def updateSlot(self, status):
 		"""Update UI elements based on device status updates"""
 		try:
@@ -473,9 +492,9 @@ class Chameleon(DeviceOverZeroMQ):
 			self.update_state_info(status["laser"])
 
 			if status["laser"]["lasing"]:
-				self.red_rectangle.setStyleSheet("background-color: red; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkred; padding: 4px; border-radius: 10px;")
+				self.red_rectangle.setStyleSheet("background-color: darkred; color: white; font-weight: bold; font-size: 20px; border: 2px solid red; padding: 1px; border-radius: 10px;")
 			else:
-				self.red_rectangle.setStyleSheet("background-color: gray; color: white; font-weight: bold; font-size: 20px; border: 3px solid darkgray; padding: 4px; border-radius: 10px;")
+				self.red_rectangle.setStyleSheet("background-color: gray; color: white; font-weight: bold; font-size: 20px; border: 2px solid darkgray; padding: 1px; border-radius: 10px;")
 
 			self.left_lcd.display(status["fixed"]["power"])
 			self.right_lcd.display(status["tunable"]["power"])
