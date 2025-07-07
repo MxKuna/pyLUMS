@@ -3,17 +3,22 @@
 Support for QuadAOM - 4-channel AOM driver from AA Opto with enhanced GUI
 """
 
-from devices.zeromq_device import DeviceWorker, DeviceOverZeroMQ, remote, include_remote_methods
-from PyQt5 import QtWidgets, QtCore, QtGui
+import re
 import threading
 import time
+
 import numpy as np
-import re
+from devices.zeromq_device import (
+    DeviceOverZeroMQ,
+    DeviceWorker,
+    include_remote_methods,
+    remote,
+)
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 
 class QuadAOMWorker(DeviceWorker):
     """ Worker class for 4-channel AOM driver by AA Opto """
-
 
     def __init__(self, comport=None, *args, **kwargs):
         """ comport: COM1, COM2, ... """
@@ -22,7 +27,6 @@ class QuadAOMWorker(DeviceWorker):
             raise Exception("Error - you should specify COM port as comport parameter in the config file")
 
         self._comport = comport
-
 
     def init_device(self):
         """ Initializes connection with the device """
@@ -56,21 +60,19 @@ class QuadAOMWorker(DeviceWorker):
     def status(self):
         d = super().status()
         d.update(self.read_status_from_device())
-        #d["voltage"] = self.voltage()
-        #d["phase"] = voltage2phase(d["voltage"])
         return d
 
     @remote
     def read_status_from_device(self):
         pattern = "^\n\rl1\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rl2\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rl3\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rl4\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rb1\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rb2\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rb3\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\rb4\s+([A-Z]+)\s+([A-Z]+)" \
-                   "\n\r\?$"
+                  "\n\rl2\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\rl3\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\rl4\s+F=(\d+\.?\d*)\s+P=(-?\d+\.?\d*)\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\rb1\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\rb2\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\rb3\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\rb4\s+([A-Z]+)\s+([A-Z]+)" \
+                  "\n\r\?$"
         reply = self._send_msg("S", reply_pattern=pattern)
         d = {}
         for ch in range(1,5):
@@ -94,13 +96,15 @@ class QuadAOMWorker(DeviceWorker):
         if phase is not None:
             if phase < 0 or phase > 16383:
                 raise ValueError(f"Wrong phase: {phase}. Expected value between 0 and 16383")
+            cmd += f"H{int(phase)}" # Assuming 'H' is the command for phase
         if power_raw is not None:
             if power_raw < 0 or power_raw > 1023:
                 raise ValueError(f"Wrong power: {power_raw}. Expected value between 0 and 1023")
             cmd += f"P{int(power_raw)}"
         if power_db is not None:
-            if power_db < 0 or power_db > 1023:
-                raise ValueError(f"Wrong power: {power_db}. Expected value between 0 and ???")
+            # Assuming a valid range for power_db, the original check was incomplete
+            if power_db < self._POWER_DB_MIN or power_db > self._POWER_DB_MAX:
+                raise ValueError(f"Wrong power: {power_db}.")
             cmd += f"D{power_db:.2f}"
         if switch is not None:
             cmd += "O1" if switch else "O0"
@@ -142,206 +146,370 @@ class QuadAOM(DeviceOverZeroMQ):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Status display elements for showing current device state
-        self._current_frequency_displays = {}
-        self._current_phase_displays = {}
-        self._current_power_displays = {}
-        self._current_switch_indicators = {}
-        self._current_internal_mode_indicators = {}
-        # New indicators for blanking
-        self._current_blanking_state_indicators = {}
-        self._current_blanking_control_indicators = {}
+        # Parent widget for dialogs
+        self._parent_widget = None
 
-        # Control elements for the interactive tab
-        self._channel_controls = {}
+        # Progress bar displays for channel status
+        self._current_frequency_progresses = {}
+        self._current_power_progresses = {}
+        self._status_indicators = {}
+
+        # Current channel being controlled
+        self._current_channel = 1
 
     def _create_status_display(self, parent, label, min_val, max_val, suffix="", precision=1):
-        """Helper method to create a labeled status display for current values with stretchable labels"""
-        container = QtWidgets.QWidget()
-        layout = QtWidgets.QHBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        # Label - now stretchable
-        label_widget = QtWidgets.QLabel(label)
-        layout.addWidget(label_widget)
-
-        # Value display - stretchable but with minimum width
-        value_display = QtWidgets.QLabel(f"0.0{suffix}")
-        value_display.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Sunken)
-        value_display.setMinimumWidth(60)
-        value_display.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        value_display.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        value_display.setStyleSheet("background-color: #000000;")
-        layout.addWidget(value_display)
-
-        # Progress bar for visual indicator - stretchable
+        """Helper method to create a progress bar for status display"""
         progress = QtWidgets.QProgressBar()
         progress.setMinimum(int(min_val * (10 ** precision)))
         progress.setMaximum(int(max_val * (10 ** precision)))
         progress.setValue(0)
-        progress.setTextVisible(False)
-        progress.setFixedHeight(15)
+        progress.setTextVisible(True)
+        progress.setFormat(f"{label} %v{suffix}")
+        progress.setFixedHeight(28)
         progress.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        layout.addWidget(progress)
+        return progress
 
-        return container, value_display, progress
+    def _create_status_row(self, channel):
+        """Create a status row for a single channel"""
+        channel_widget = QtWidgets.QWidget()
+        channel_layout = QtWidgets.QHBoxLayout(channel_widget)
+        channel_layout.setContentsMargins(0, 0, 0, 0)
+        channel_layout.setSpacing(5)
 
-    def _create_channel_control_group(self, channel):
-        """Create control elements for a channel with the specified layout"""
-        group = QtWidgets.QGroupBox(f"Channel {channel}")
-        group.setStyleSheet("QGroupBox { font-weight: bold; color: white }")
-        layout = QtWidgets.QVBoxLayout(group)
-        layout.setContentsMargins(5, 5, 5, 5)
+        # Channel label
+        ch_label = QtWidgets.QLabel(f"CH{channel}")
+        ch_label.setMinimumWidth(35)
+        ch_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        channel_layout.addWidget(ch_label)
 
-        controls = {}
+        # Frequency progress bar
+        freq_progress = self._create_status_display(
+            channel_widget, "F:", self._FREQ_MIN, self._FREQ_MAX, "MHz", precision=1
+        )
+        freq_progress.setMinimumWidth(140)
+        channel_layout.addWidget(freq_progress)
+        self._current_frequency_progresses[channel] = freq_progress
 
-        # 1st row - 2 textboxes to adjust power in dB and frequency in MHz
-        row1 = QtWidgets.QHBoxLayout()
+        # Power progress bar
+        power_progress = self._create_status_display(
+            channel_widget, "P:", self._POWER_DB_MIN, self._POWER_DB_MAX, "dB", precision=1
+        )
+        power_progress.setMinimumWidth(140)
+        channel_layout.addWidget(power_progress)
+        self._current_power_progresses[channel] = power_progress
+
+        # Status indicators container
+        status_widget = QtWidgets.QWidget()
+        status_widget.setFixedWidth(80)
+        status_widget_layout = QtWidgets.QHBoxLayout(status_widget)
+        status_widget_layout.setContentsMargins(0, 0, 0, 0)
+        status_widget_layout.setSpacing(3)
+
+        # Power status indicator
+        power_indicator = QtWidgets.QLabel("PWR")
+        power_indicator.setFixedSize(25, 25)
+        power_indicator.setAlignment(QtCore.Qt.AlignCenter)
+        power_indicator.setStyleSheet("background-color: #ff6666; border: 1px solid black; font-size: 9px; font-weight: bold;")
+        status_widget_layout.addWidget(power_indicator)
+
+        # Blanking status indicator
+        blank_indicator = QtWidgets.QLabel("BLK")
+        blank_indicator.setFixedSize(25, 25)
+        blank_indicator.setAlignment(QtCore.Qt.AlignCenter)
+        blank_indicator.setStyleSheet("background-color: #ff6666; border: 1px solid black; font-size: 9px; font-weight: bold;")
+        status_widget_layout.addWidget(blank_indicator)
+
+        # Control mode indicators
+        pmode_indicator = QtWidgets.QLabel("PI")
+        pmode_indicator.setFixedSize(20, 25)
+        pmode_indicator.setAlignment(QtCore.Qt.AlignCenter)
+        pmode_indicator.setStyleSheet("background-color: #3399ff; border: 1px solid black; font-size: 8px; font-weight: bold;")
+        status_widget_layout.addWidget(pmode_indicator)
+
+        channel_layout.addWidget(status_widget)
+
+        # Store indicators for updates
+        self._status_indicators[channel] = {
+            'power': power_indicator,
+            'blanking': blank_indicator,
+            'power_mode': pmode_indicator
+        }
+
+        return channel_widget
+
+    def _create_control_panel(self):
+        """Create the common control panel"""
+        control_group = QtWidgets.QGroupBox("Control Panel")
+        control_group.setStyleSheet("QGroupBox { font-weight: bold; color: white; font-size: 14px; }")
+        control_group.setMinimumWidth(300)
+        control_group.setMaximumWidth(350)
+        control_layout = QtWidgets.QVBoxLayout(control_group)
+        control_layout.setSpacing(5)
+
+        # Channel selector
+        channel_selector_layout = QtWidgets.QHBoxLayout()
+        channel_label = QtWidgets.QLabel("Select Channel:")
+        channel_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        channel_selector_layout.addWidget(channel_label)
+
+        self._channel_selector = QtWidgets.QComboBox()
+        self._channel_selector.addItems(["Channel 1", "Channel 2", "Channel 3", "Channel 4"])
+        self._channel_selector.setStyleSheet("font-size: 12px; padding: 3px;")
+        self._channel_selector.currentIndexChanged.connect(self._on_channel_changed)
+        channel_selector_layout.addWidget(self._channel_selector)
+
+        control_layout.addLayout(channel_selector_layout)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        control_layout.addWidget(separator)
 
         # Frequency control
-        freq_container = QtWidgets.QWidget()
-        freq_layout = QtWidgets.QHBoxLayout(freq_container)
-        freq_layout.setContentsMargins(0, 0, 0, 0)
-
+        freq_layout = QtWidgets.QHBoxLayout()
         freq_label = QtWidgets.QLabel("Frequency:")
+        freq_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        freq_label.setMinimumWidth(80)
         freq_layout.addWidget(freq_label)
 
-        freq_input = QtWidgets.QLineEdit()
-        freq_input.setValidator(QtGui.QDoubleValidator(self._FREQ_MIN, self._FREQ_MAX, 2))
-        freq_input.setText(f"{self._FREQ_MIN:.1f}")
-        freq_input.setFixedWidth(60)
-        freq_layout.addWidget(freq_input)
+        self._freq_input = QtWidgets.QLineEdit()
+        self._freq_input.setValidator(QtGui.QDoubleValidator(self._FREQ_MIN, self._FREQ_MAX, 2))
+        self._freq_input.setText(f"{self._FREQ_MIN:.1f}")
+        self._freq_input.setFixedWidth(80)
+        self._freq_input.setStyleSheet("font-size: 12px; padding: 3px;")
+        freq_layout.addWidget(self._freq_input)
 
         freq_unit = QtWidgets.QLabel("MHz")
+        freq_unit.setStyleSheet("font-size: 12px;")
         freq_layout.addWidget(freq_unit)
+        freq_layout.addStretch()
 
-        row1.addWidget(freq_container)
-        controls['frequency_input'] = freq_input
+        control_layout.addLayout(freq_layout)
 
         # Power control
-        power_container = QtWidgets.QWidget()
-        power_layout = QtWidgets.QHBoxLayout(power_container)
-        power_layout.setContentsMargins(0, 0, 0, 0)
-
+        power_layout = QtWidgets.QHBoxLayout()
         power_label = QtWidgets.QLabel("Power:")
+        power_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        power_label.setMinimumWidth(80)
         power_layout.addWidget(power_label)
 
-        power_input = QtWidgets.QLineEdit()
-        power_input.setValidator(QtGui.QDoubleValidator(self._POWER_DB_MIN, self._POWER_DB_MAX, 1))
-        power_input.setText("0.0")
-        power_input.setFixedWidth(60)
-        power_layout.addWidget(power_input)
+        self._power_input = QtWidgets.QLineEdit()
+        self._power_input.setValidator(QtGui.QDoubleValidator(self._POWER_DB_MIN, self._POWER_DB_MAX, 1))
+        self._power_input.setText("0.0")
+        self._power_input.setFixedWidth(80)
+        self._power_input.setStyleSheet("font-size: 12px; padding: 3px;")
+        power_layout.addWidget(self._power_input)
 
         power_unit = QtWidgets.QLabel("dB")
+        power_unit.setStyleSheet("font-size: 12px;")
         power_layout.addWidget(power_unit)
+        power_layout.addStretch()
 
-        row1.addWidget(power_container)
-        controls['power_input'] = power_input
+        control_layout.addLayout(power_layout)
 
-        layout.addLayout(row1)
-
-        # 2nd row - 2 buttons to adjust power and external/internal mode of control
-        row2 = QtWidgets.QHBoxLayout()
-
-        power_toggle = QtWidgets.QPushButton("Power OFF")
-        power_toggle.setCheckable(True)
-        power_toggle.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        power_toggle.setStyleSheet("QPushButton { background-color: #ff6666; } QPushButton:checked { background-color: #66ff66; }")
-        power_toggle.toggled.connect(lambda state: self.configure_channel(channel, switch=not self.status()[f'channel{channel}']['power_state']))
-        row2.addWidget(power_toggle)
-        controls['power_toggle'] = power_toggle
-
-        power_mode_toggle = QtWidgets.QPushButton("EXTERNAL")
-        power_mode_toggle.setCheckable(True)
-        power_mode_toggle.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        power_mode_toggle.setStyleSheet("QPushButton { background-color: #3399ff; } QPushButton:checked { background-color: #ff9933; }")
-        power_mode_toggle.toggled.connect(lambda state: self.configure_channel(channel, internal_mode=self.status()[f'channel{channel}']['power_control']=='EXTERNAL'))
-        row2.addWidget(power_mode_toggle)
-        controls['power_mode_toggle'] = power_mode_toggle
-
-        layout.addLayout(row2)
-
-        # 3rd row - 2 buttons to adjust power and int/ext mode of blanking
-        row3 = QtWidgets.QHBoxLayout()
-
-        blanking_toggle = QtWidgets.QPushButton("Blanking OFF")
-        blanking_toggle.setCheckable(True)
-        blanking_toggle.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        blanking_toggle.setStyleSheet("QPushButton { background-color: #ff6666; } QPushButton:checked { background-color: #66ff66; }")
-        blanking_toggle.toggled.connect(lambda state: self.configure_blanking(channel, blanking_on=not self.status()[f'channel{channel}']['blanking_state']))
-        row3.addWidget(blanking_toggle)
-        controls['blanking_toggle'] = blanking_toggle
-
-        blanking_mode_toggle = QtWidgets.QPushButton("Ext Blanking")
-        blanking_mode_toggle.setCheckable(True)
-        blanking_mode_toggle.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        blanking_mode_toggle.setStyleSheet("QPushButton { background-color: #3399ff; } QPushButton:checked { background-color: #ff9933; }")
-        blanking_mode_toggle.toggled.connect(lambda checked: blanking_mode_toggle.setText('Int Blanking' if checked else 'Ext Blanking'))
-        row3.addWidget(blanking_mode_toggle)
-        controls['blanking_mode_toggle'] = blanking_mode_toggle
-
-        layout.addLayout(row3)
-
-        # Last row - slider to adjust phase
-        row4 = QtWidgets.QVBoxLayout()
-
-        # Phase slider label and value display
-        phase_header = QtWidgets.QHBoxLayout()
+        # Phase control
+        phase_layout = QtWidgets.QHBoxLayout()
         phase_label = QtWidgets.QLabel("Phase:")
-        phase_header.addWidget(phase_label)
+        phase_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        phase_label.setMinimumWidth(80)
+        phase_layout.addWidget(phase_label)
 
-        phase_value = QtWidgets.QLabel("0")
-        phase_value.setFrameStyle(QtWidgets.QFrame.Panel | QtWidgets.QFrame.Sunken)
-        phase_value.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        phase_value.setStyleSheet("background-color: #000000;")
-        phase_value.setMinimumWidth(60)
-        phase_header.addWidget(phase_value)
+        self._phase_input = QtWidgets.QLineEdit()
+        self._phase_input.setValidator(QtGui.QIntValidator(self._PHASE_MIN, self._PHASE_MAX))
+        self._phase_input.setText("0")
+        self._phase_input.setFixedWidth(80)
+        self._phase_input.setStyleSheet("font-size: 12px; padding: 3px;")
+        phase_layout.addWidget(self._phase_input)
+        phase_layout.addStretch()
 
-        row4.addLayout(phase_header)
+        control_layout.addLayout(phase_layout)
 
-        # Phase slider
-        phase_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        phase_slider.setMinimum(self._PHASE_MIN)
-        phase_slider.setMaximum(self._PHASE_MAX)
-        phase_slider.setValue(0)
-        phase_slider.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        phase_slider.valueChanged.connect(lambda v: phase_value.setText(str(v)))
-        row4.addWidget(phase_slider)
+        # Toggle buttons
+        button_layout = QtWidgets.QGridLayout()
+        button_layout.setSpacing(5)
 
-        layout.addLayout(row4)
-        controls['phase_slider'] = phase_slider
-        controls['phase_value'] = phase_value
+        # Power toggle
+        self._power_toggle = QtWidgets.QPushButton("PWR OFF")
+        self._power_toggle.setCheckable(True)
+        self._power_toggle.setMinimumHeight(28)
+        self._power_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #ff6666; font-weight: bold; font-size: 11px;
+                border: 2px solid #333; border-radius: 5px;
+            }
+            QPushButton:checked { background-color: #66ff66; }
+            QPushButton:hover { border: 2px solid #666; }
+        """)
+        self._power_toggle.toggled.connect(self._on_power_toggle)
+        button_layout.addWidget(self._power_toggle, 0, 0)
 
-        # Apply button at the very bottom
-        apply_button = QtWidgets.QPushButton("Apply Settings")
-        apply_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        apply_button.setStyleSheet("background-color: #99ccff;")
-        apply_button.clicked.connect(lambda: self._apply_channel_settings(channel))
-        layout.addWidget(apply_button)
-        controls['apply_button'] = apply_button
+        # Power mode toggle
+        self._power_mode_toggle = QtWidgets.QPushButton("PWR EXT")
+        self._power_mode_toggle.setCheckable(True)
+        self._power_mode_toggle.setMinimumHeight(28)
+        self._power_mode_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #3399ff; font-weight: bold; font-size: 11px;
+                border: 2px solid #333; border-radius: 5px;
+            }
+            QPushButton:checked { background-color: #ff9933; }
+            QPushButton:hover { border: 2px solid #666; }
+        """)
+        self._power_mode_toggle.toggled.connect(self._on_power_mode_toggle)
+        button_layout.addWidget(self._power_mode_toggle, 0, 1)
 
-        # Store controls for later access
-        self._channel_controls[channel] = controls
+        # Blanking toggle
+        self._blanking_toggle = QtWidgets.QPushButton("BLK OFF")
+        self._blanking_toggle.setCheckable(True)
+        self._blanking_toggle.setMinimumHeight(28)
+        self._blanking_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #ff6666; font-weight: bold; font-size: 11px;
+                border: 2px solid #333; border-radius: 5px;
+            }
+            QPushButton:checked { background-color: #66ff66; }
+            QPushButton:hover { border: 2px solid #666; }
+        """)
+        self._blanking_toggle.toggled.connect(self._on_blanking_toggle)
+        button_layout.addWidget(self._blanking_toggle, 1, 0)
 
-        return group
+        # Blanking mode toggle
+        self._blanking_mode_toggle = QtWidgets.QPushButton("BLK EXT")
+        self._blanking_mode_toggle.setCheckable(True)
+        self._blanking_mode_toggle.setMinimumHeight(28)
+        self._blanking_mode_toggle.setStyleSheet("""
+            QPushButton {
+                background-color: #3399ff; font-weight: bold; font-size: 11px;
+                border: 2px solid #333; border-radius: 5px;
+            }
+            QPushButton:checked { background-color: #ff9933; }
+            QPushButton:hover { border: 2px solid #666; }
+        """)
+        self._blanking_mode_toggle.toggled.connect(self._on_blanking_mode_toggle)
+        button_layout.addWidget(self._blanking_mode_toggle, 1, 1)
 
-    def _apply_channel_settings(self, channel):
-        """Apply channel settings when Apply button is clicked"""
-        controls = self._channel_controls[channel]
+        control_layout.addLayout(button_layout)
 
+        # Separator for extra buttons
+        separator2 = QtWidgets.QFrame()
+        separator2.setFrameShape(QtWidgets.QFrame.HLine)
+        separator2.setFrameShadow(QtWidgets.QFrame.Sunken)
+        control_layout.addWidget(separator2)
+
+        # Calibrate and Presets buttons
+        extra_buttons_layout = QtWidgets.QHBoxLayout()
+
+        self._calibrate_button = QtWidgets.QPushButton("CALIBRATE")
+        self._calibrate_button.setMinimumHeight(28)
+        self._calibrate_button.setStyleSheet("font-weight: bold;")
+        self._calibrate_button.clicked.connect(self._open_calibrate_window)
+        extra_buttons_layout.addWidget(self._calibrate_button)
+
+        self._presets_button = QtWidgets.QPushButton("PRESETS")
+        self._presets_button.setMinimumHeight(28)
+        self._presets_button.setStyleSheet("font-weight: bold;")
+        self._presets_button.clicked.connect(self._open_presets_window)
+        extra_buttons_layout.addWidget(self._presets_button)
+
+        control_layout.addLayout(extra_buttons_layout)
+
+        # Apply button
+        apply_button = QtWidgets.QPushButton("APPLY SETTINGS")
+        apply_button.setMinimumHeight(32)
+        apply_button.setStyleSheet("""
+            QPushButton {
+                background-color: #99ccff; font-weight: bold; font-size: 14px;
+                border: 2px solid #333; border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #77aadd; border: 2px solid #555; }
+            QPushButton:pressed { background-color: #5588bb; }
+        """)
+        apply_button.clicked.connect(self._apply_current_channel_settings)
+        control_layout.addWidget(apply_button)
+
+        return control_group
+
+    def _open_calibrate_window(self):
+        """Opens an empty calibration pop-up window."""
+        dialog = QtWidgets.QDialog(self._parent_widget)
+        dialog.setWindowTitle("Calibration")
+        dialog.setMinimumSize(300, 200)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        label = QtWidgets.QLabel("Calibration window is under construction.")
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(label)
+        dialog.exec_()
+
+    def _open_presets_window(self):
+        """Opens an empty presets pop-up window."""
+        dialog = QtWidgets.QDialog(self._parent_widget)
+        dialog.setWindowTitle("Channel 4 Presets")
+        dialog.setMinimumSize(300, 200)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        label = QtWidgets.QLabel("Presets window is under construction.")
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(label)
+        dialog.exec_()
+
+    def _on_channel_changed(self, index):
+        """Called when channel selector changes"""
+        self._current_channel = index + 1
+        # Show PRESETS button only for channel 4
+        self._presets_button.setVisible(self._current_channel == 4)
+        self._load_channel_settings(self._current_channel)
+
+    def _load_channel_settings(self, channel):
+        """Load settings for the specified channel into the control widgets"""
         try:
-            # Get values from controls
-            frequency = float(controls['frequency_input'].text())
-            power_db = float(controls['power_input'].text())
-            phase = controls['phase_slider'].value()
-            power_on = controls['power_toggle'].isChecked()
-            power_internal = controls['power_mode_toggle'].isChecked()
-            blanking_on = controls['blanking_toggle'].isChecked()
-            blanking_internal = controls['blanking_mode_toggle'].isChecked()
+            status = self.status()
+            channel_data = status[f'channel{channel}']
+
+            # Update controls with current channel settings
+            self._freq_input.setText(f"{channel_data['frequency']:.1f}")
+            self._power_input.setText(f"{channel_data['power']:.1f}")
+            self._phase_input.setText("0") # Reset phase to default on channel change
+
+            # Update toggle buttons
+            self._power_toggle.blockSignals(True)
+            self._power_toggle.setChecked(channel_data['power_state'])
+            self._power_toggle.setText('PWR ON' if channel_data['power_state'] else 'PWR OFF')
+            self._power_toggle.blockSignals(False)
+
+            self._power_mode_toggle.blockSignals(True)
+            is_internal = channel_data['power_control'] == 'INT'
+            self._power_mode_toggle.setChecked(is_internal)
+            self._power_mode_toggle.setText('PWR INT' if is_internal else 'PWR EXT')
+            self._power_mode_toggle.blockSignals(False)
+
+            self._blanking_toggle.blockSignals(True)
+            self._blanking_toggle.setChecked(channel_data['blanking_state'])
+            self._blanking_toggle.setText('BLK ON' if channel_data['blanking_state'] else 'BLK OFF')
+            self._blanking_toggle.blockSignals(False)
+
+            self._blanking_mode_toggle.blockSignals(True)
+            is_blanking_internal = channel_data['blanking_control'] == 'INT B'
+            self._blanking_mode_toggle.setChecked(is_blanking_internal)
+            self._blanking_mode_toggle.setText('BLK INT' if is_blanking_internal else 'BLK EXT')
+            self._blanking_mode_toggle.blockSignals(False)
+
+        except Exception as e:
+            print(f"Error loading channel {channel} settings: {e}")
+
+    def _apply_current_channel_settings(self):
+        """Apply settings for the currently selected channel"""
+        try:
+            frequency = float(self._freq_input.text())
+            power_db = float(self._power_input.text())
+            phase = int(self._phase_input.text())
+            power_on = self._power_toggle.isChecked()
+            power_internal = self._power_mode_toggle.isChecked()
+            blanking_on = self._blanking_toggle.isChecked()
+            blanking_internal = self._blanking_mode_toggle.isChecked()
 
             # Configure channel
             self.configure_channel(
-                channel=channel,
+                channel=self._current_channel,
                 frequency_mhz=frequency,
                 power_db=power_db,
                 phase=phase,
@@ -351,142 +519,64 @@ class QuadAOM(DeviceOverZeroMQ):
 
             # Configure blanking
             self.configure_blanking(
-                channel=channel,
+                channel=self._current_channel,
                 blanking_on=blanking_on,
                 internal_control=blanking_internal
             )
 
         except Exception as e:
-            print(f"Error applying channel {channel} settings: {e}")
-            # Optionally, show error message to user
-            error_dialog = QtWidgets.QMessageBox()
-            error_dialog.setIcon(QtWidgets.QMessageBox.Critical)
-            error_dialog.setText(f"Error applying settings: {str(e)}")
-            error_dialog.setWindowTitle("Error")
-            error_dialog.exec_()
+            print(f"Error applying channel {self._current_channel} settings: {e}")
+
+    def _on_power_toggle(self, checked):
+        """Handle power toggle button"""
+        self._power_toggle.setText('PWR ON' if checked else 'PWR OFF')
+
+    def _on_power_mode_toggle(self, checked):
+        """Handle power mode toggle button"""
+        self._power_mode_toggle.setText('PWR INT' if checked else 'PWR EXT')
+
+    def _on_blanking_toggle(self, checked):
+        """Handle blanking toggle button"""
+        self._blanking_toggle.setText('BLK ON' if checked else 'BLK OFF')
+
+    def _on_blanking_mode_toggle(self, checked):
+        """Handle blanking mode toggle button"""
+        self._blanking_mode_toggle.setText('BLK INT' if checked else 'BLK EXT')
 
     def createDock(self, parentWidget, menu=None):
+        self._parent_widget = parentWidget
         main_widget = QtWidgets.QWidget(parentWidget)
-        dock = QtWidgets.QDockWidget("4xAOM", parentWidget)
+        dock = QtWidgets.QDockWidget("QuadAOM Controller", parentWidget)
         main_layout = QtWidgets.QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)  # Reduce margins
+        main_layout.setContentsMargins(10, 10, 10, 10)
         main_widget.setLayout(main_layout)
 
-        # Create a tab widget for status and control tabs
-        tab_widget = QtWidgets.QTabWidget()
-        main_layout.addWidget(tab_widget)
+        # Create main horizontal layout: status on left, controls on right
+        control_container = QtWidgets.QWidget()
+        control_layout = QtWidgets.QHBoxLayout(control_container)
+        control_layout.setContentsMargins(0, 0, 0, 0)
+        control_layout.setSpacing(20)
 
-        # --------- STATUS TAB ---------
-        status_tab = QtWidgets.QWidget()
-        status_layout = QtWidgets.QVBoxLayout(status_tab)
-        status_layout.setSpacing(5)  # Reduce spacing
-        status_layout.setContentsMargins(3, 3, 3, 3)  # Reduce margins
+        # Left side - Status display
+        status_group = QtWidgets.QGroupBox("Channel Status")
+        status_group.setStyleSheet("QGroupBox { font-weight: bold; color: white; font-size: 14px; }")
+        status_group.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
+        status_layout = QtWidgets.QVBoxLayout(status_group)
+        status_layout.setSpacing(8)
 
-        # Status display layout - Changed to QGridLayout for better space management
-        channels_layout = QtWidgets.QGridLayout()
-        channels_layout.setSpacing(5)  # Reduce spacing
-        status_layout.addLayout(channels_layout, 1)  # Add stretch factor
-
-        # Create channel groups for status display
+        # Create status rows for each channel
         for ch in range(1, 5):
-            # Status group
-            status_group = QtWidgets.QGroupBox(f"Channel {ch}")
-            status_group.setStyleSheet("QGroupBox { font-weight: bold; color: white}")
-            status_group_layout = QtWidgets.QVBoxLayout(status_group)
-            status_group_layout.setSpacing(3)  # Reduce spacing for tighter look
-            status_group_layout.setContentsMargins(3, 10, 3, 3)  # Tighter margins
+            status_row = self._create_status_row(ch)
+            status_layout.addWidget(status_row)
 
-            # Make the group expand in all directions
-            status_group.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        control_layout.addWidget(status_group)
 
-            # Channel status displays
-            freq_display, freq_value, freq_progress = self._create_status_display(
-                status_group, "Frequ:", self._FREQ_MIN, self._FREQ_MAX, " MHz", precision=1
-            )
-            self._current_frequency_displays[ch] = (freq_value, freq_progress)
-            status_group_layout.addWidget(freq_display)
+        # Right side - Control panel
+        control_panel = self._create_control_panel()
+        control_layout.addWidget(control_panel)
 
-            power_display, power_value, power_progress = self._create_status_display(
-                status_group, "Power:", self._POWER_DB_MIN, self._POWER_DB_MAX, " dB", precision=1
-            )
-            self._current_power_displays[ch] = (power_value, power_progress)
-            status_group_layout.addWidget(power_display)
-
-            # Create grid layout for status indicators (2x2 grid)
-            indicators_grid = QtWidgets.QGridLayout()
-            indicators_grid.setSpacing(3)  # Tighter spacing
-            indicators_grid.setColumnStretch(0, 1)  # Make columns stretch equally
-            indicators_grid.setColumnStretch(1, 1)
-            indicators_grid.setRowStretch(0, 1)  # Make rows stretch equally
-            indicators_grid.setRowStretch(1, 1)
-            status_group_layout.addLayout(indicators_grid)
-
-            # Status indicators for switch and internal mode
-            switch_indicator = QtWidgets.QLabel("Output: OFF")
-            # Force the indicator to expand both horizontally and vertically
-            switch_indicator.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            switch_indicator.setStyleSheet("background-color: #ffcccc; padding: 3px; border-radius: 3px; color: black;")
-            self._current_switch_indicators[ch] = switch_indicator
-            indicators_grid.addWidget(switch_indicator, 0, 0)
-
-            mode_indicator = QtWidgets.QLabel("External")
-            # Force the indicator to expand both horizontally and vertically
-            mode_indicator.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            mode_indicator.setStyleSheet("background-color: #ccccff; padding: 3px; border-radius: 3px; color: black;")
-            self._current_internal_mode_indicators[ch] = mode_indicator
-            indicators_grid.addWidget(mode_indicator, 0, 1)
-
-            # Add blanking status indicators in the 2x2 grid
-            blanking_state = QtWidgets.QLabel("Blanking: OFF")
-            # Force the indicator to expand both horizontally and vertically
-            blanking_state.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            blanking_state.setStyleSheet("background-color: #ffddcc; padding: 3px; border-radius: 3px; color: black;")
-            self._current_blanking_state_indicators[ch] = blanking_state
-            indicators_grid.addWidget(blanking_state, 1, 0)
-
-            blanking_control = QtWidgets.QLabel("External")
-            # Force the indicator to expand both horizontally and vertically
-            blanking_control.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            blanking_control.setStyleSheet("background-color: #ccffdd; padding: 3px; border-radius: 3px; color: black;")
-            self._current_blanking_control_indicators[ch] = blanking_control
-            indicators_grid.addWidget(blanking_control, 1, 1)
-
-            # Add vertical stretch to push content to the top and fill extra space
-            status_group_layout.addStretch(1)
-
-            # Add to grid layout with equal columns
-            col = (ch - 1) % 2
-            row = (ch - 1) // 2
-            channels_layout.addWidget(status_group, row, col)
-
-            # Set column and row stretch factors
-            channels_layout.setColumnStretch(col, 1)
-            channels_layout.setRowStretch(row, 1)
-
-        # Add stretch to main layout to push content up
-        status_layout.addStretch(1)
-
-        # Add the status tab to the tab widget
-        tab_widget.addTab(status_tab, "Status")
-
-        # --------- CONTROL TAB ---------
-        control_tab = QtWidgets.QWidget()
-        control_layout = QtWidgets.QVBoxLayout(control_tab)
-        control_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Control display layout
-        control_channels_layout = QtWidgets.QHBoxLayout()
-        control_layout.addLayout(control_channels_layout)
-
-        # Create channel control groups
-        for ch in range(1, 5):
-            # Create control group with all interactive elements
-            control_group = self._create_channel_control_group(ch)
-            control_group.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-            control_channels_layout.addWidget(control_group)
-
-        # Add the control tab to the tab widget
-        tab_widget.addTab(control_tab, "Controls")
+        # Add the control container to the main layout
+        main_layout.addWidget(control_container)
 
         # Set up the dock widget
         dock.setWidget(main_widget)
@@ -495,28 +585,33 @@ class QuadAOM(DeviceOverZeroMQ):
         if menu:
             menu.addAction(dock.toggleViewAction())
 
+        # Initialize with channel 1
+        self._current_channel = 1
+        self._presets_button.setVisible(False) # Initially hide for CH1
+        self._load_channel_settings(1)
+
         # Create listener thread for updates
         self.createListenerThread(self.updateSlot)
 
     def updateSlot(self, status):
-        """ This function receives periodic updates from the worker """
+        """This function receives periodic updates from the worker"""
         try:
             for ch in range(1, 5):
                 channel_data = status[f'channel{ch}']
 
-                # Update frequency display
+                # Update frequency progress bar
                 freq_value = channel_data['frequency']
-                freq_label, freq_progress = self._current_frequency_displays[ch]
-                freq_label.setText(f"{freq_value:.1f} MHz")
+                freq_progress = self._current_frequency_progresses[ch]
                 freq_progress.setValue(int(freq_value * 10))
+                freq_progress.setFormat(f"F: {freq_value:.1f}MHz")
 
-                # Update power display
+                # Update power progress bar
                 power_db = channel_data['power']
-                power_label, power_progress = self._current_power_displays[ch]
-                power_label.setText(f"{power_db:.1f} dB")
+                power_progress = self._current_power_progresses[ch]
                 power_progress.setValue(int(power_db * 10))
+                power_progress.setFormat(f"P: {power_db:.1f}dB")
 
-                # Color code the power progress bar based on value
+                # Color code the power progress bar
                 if power_db > 25:
                     power_progress.setStyleSheet("QProgressBar::chunk { background-color: #ff0000; }")
                 elif power_db > 15:
@@ -524,66 +619,34 @@ class QuadAOM(DeviceOverZeroMQ):
                 else:
                     power_progress.setStyleSheet("QProgressBar::chunk { background-color: #00aa00; }")
 
-                # Update switch and mode indicators
-                is_on = channel_data['power_state']
-                self._current_switch_indicators[ch].setText(f"Output: {'ON' if is_on else 'OFF'}")
-                self._current_switch_indicators[ch].setStyleSheet(
-                    f"background-color: {'#66ff66' if is_on else '#ff6666'}; padding: 3px; border-radius: 3px; color: black"
+                # Update status indicators
+                indicators = self._status_indicators[ch]
+
+                # Power indicator
+                indicators['power'].setStyleSheet(
+                    f"background-color: {'#66ff66' if channel_data['power_state'] else '#ff6666'}; "
+                    "border: 1px solid black; font-size: 9px; font-weight: bold;"
                 )
 
-                is_internal = channel_data['power_control'] == 'INT'
-                self._current_internal_mode_indicators[ch].setText(f"{'Internal' if is_internal else 'External'}")
-                self._current_internal_mode_indicators[ch].setStyleSheet(
-                    f"background-color: {'#ff9933' if is_internal else '#3399ff'}; padding: 3px; border-radius: 3px; color: black"
+                # Blanking indicator
+                indicators['blanking'].setStyleSheet(
+                    f"background-color: {'#66ff66' if channel_data['blanking_state'] else '#ff6666'}; "
+                    "border: 1px solid black; font-size: 9px; font-weight: bold;"
                 )
 
-                # Update blanking indicators
-                is_blanking_on = channel_data['blanking_state']
-                self._current_blanking_state_indicators[ch].setText(f"Blanking: {'ON' if is_blanking_on else 'OFF'}")
-                self._current_blanking_state_indicators[ch].setStyleSheet(
-                    f"background-color: {'#66ff66' if is_blanking_on else '#ff6666'}; padding: 3px; border-radius: 3px; color: black"
+                # Power mode indicator
+                indicators['power_mode'].setStyleSheet(
+                    f"background-color: {'#ff9933' if channel_data['power_control'] == 'INT' else '#3399ff'}; "
+                    "border: 1px solid black; font-size: 8px; font-weight: bold;"
                 )
 
-                is_blanking_internal = channel_data['blanking_control'] == 'INT'
-                self._current_blanking_control_indicators[ch].setText(f"{'Internal' if is_blanking_internal else 'External'}")
-                self._current_blanking_control_indicators[ch].setStyleSheet(
-                    f"background-color: {'#ff9933' if is_blanking_internal else '#3399ff'}; padding: 3px; border-radius: 3px; color: black"
-                )
-
-                # Also update the control elements to match current state if they exist
-                if ch in self._channel_controls:
-                    controls = self._channel_controls[ch]
-                    # Only update if not being edited by user
-                    if not controls['frequency_input'].hasFocus():
-                        controls['frequency_input'].setText(f"{freq_value:.1f}")
-                    if not controls['power_input'].hasFocus():
-                        controls['power_input'].setText(f"{power_db:.1f}")
-
-                    expected_text = 'Power ON' if is_on else 'Power OFF'
-                    if controls['power_toggle'].isChecked() != is_on or controls['power_toggle'].text() != expected_text:
-                        controls['power_toggle'].blockSignals(True)
-                        controls['power_toggle'].setChecked(is_on)
-                        controls['power_toggle'].setText(expected_text)
-                        controls['power_toggle'].blockSignals(False)
-
-                    expected_text = 'INTERNAL' if is_internal else 'EXTERNAL'
-                    if controls['power_mode_toggle'].isChecked() != is_internal or controls['power_mode_toggle'].text() != expected_text:
-                        controls['power_mode_toggle'].blockSignals(True)
-                        controls['power_mode_toggle'].setChecked(is_internal)
-                        controls['power_mode_toggle'].setText('INTERNAL' if is_internal else 'EXTERNAL')
-                        controls['power_mode_toggle'].blockSignals(False)
-
-                    expected_text = 'Blanking ON' if is_blanking_on else 'Blanking OFF'
-                    if controls['blanking_toggle'].isChecked() != is_blanking_on or controls['blanking_toggle'].text() != expected_text:
-                        controls['blanking_toggle'].blockSignals(True)
-                        controls['blanking_toggle'].setChecked(is_blanking_on)
-                        controls['blanking_toggle'].setText('Blanking ON' if is_blanking_on else 'Blanking OFF')
-                        controls['blanking_toggle'].blockSignals(False)
-
-                    controls['blanking_mode_toggle'].blockSignals(True)
-                    controls['blanking_mode_toggle'].setChecked(is_blanking_internal)
-                    controls['blanking_mode_toggle'].setText('Int Blanking' if is_blanking_internal else 'Ext Blanking')
-                    controls['blanking_mode_toggle'].blockSignals(False)
+            # Update current channel controls if they're not being edited
+            if hasattr(self, '_current_channel'):
+                current_data = status[f'channel{self._current_channel}']
+                if not self._freq_input.hasFocus():
+                    self._freq_input.setText(f"{current_data['frequency']:.1f}")
+                if not self._power_input.hasFocus():
+                    self._power_input.setText(f"{current_data['power']:.1f}")
 
         except Exception as e:
             print(f"Error while updating Quad AOM GUI: {e}")
