@@ -3,14 +3,13 @@ from time import sleep, time
 
 import serial
 import serial.tools.list_ports
-from PyQt5 import QtCore, QtGui, QtWidgets
-
 from devices.zeromq_device import (
     DeviceOverZeroMQ,
     DeviceWorker,
     include_remote_methods,
     remote,
 )
+from PyQt5 import QtCore, QtWidgets
 
 
 class ShutterWorker(DeviceWorker):
@@ -41,13 +40,13 @@ class ShutterWorker(DeviceWorker):
         self.RESP_OK = 0x00
         self.RESP_ERROR = 0xFF
 
-        # Settings (will be updated from UI)
+        # Settings (can be updated from UI)
         self.servo_settings = {
             i: {
                 "closed_pw": 1000,
-                "open_pw": 2000,
+                "open_pw": 1500,
                 "step_deg": 1.0,
-                "step_delay_ms": 10,
+                "step_delay_ms": 15,
                 "name": f"Servo {i + 1}",
             }
             for i in range(4)
@@ -142,7 +141,7 @@ class ShutterWorker(DeviceWorker):
                     self.comp.reset_input_buffer()
                     self.comp.reset_output_buffer()
 
-                    sleep(2.5)
+                    sleep(2)
 
                     pkt = self._receive_packet(timeout=0.5)
                     if pkt and pkt["cmd"] == 0xFF:
