@@ -5,7 +5,7 @@
 // ============================================================================
 
 Servo servos[4];
-const uint8_t SERVO_PINS[4] = {1, 9, 0, 10};
+const uint8_t SERVO_PINS[4] = {9, 1, 0, 10};
 const uint16_t PW_MIN = 500;
 const uint16_t PW_MAX = 2500;
 const uint16_t PW_DEFAULT = 1500;

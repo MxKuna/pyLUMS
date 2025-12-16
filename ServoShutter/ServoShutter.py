@@ -3,17 +3,20 @@ from time import sleep, time
 
 import serial
 import serial.tools.list_ports
+from PyQt5 import QtCore, QtWidgets
+
 from devices.zeromq_device import (
     DeviceOverZeroMQ,
     DeviceWorker,
     include_remote_methods,
     remote,
 )
-from PyQt5 import QtCore, QtWidgets
 
 
 class ShutterWorker(DeviceWorker):
-    def __init__(self, *args, vid=0x0483, pid=0x374B, com=None, baud=115200, **kwargs):
+    def __init__(
+        self, *args, vid=0x0483, pid=[0x374B, 0x438], com=None, baud=115200, **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.baud = baud
         self.com = com
@@ -132,7 +135,7 @@ class ShutterWorker(DeviceWorker):
     def init_device(self):
         ports = list(serial.tools.list_ports.comports())
         for port in ports:
-            if port.vid == self.vid and port.pid == self.pid:
+            if port.vid == self.vid and port.pid in self.pid:
                 self.com = port.device
                 try:
                     self.comp = serial.Serial(self.com, self.baud, timeout=0.5)
@@ -162,7 +165,7 @@ class ShutterWorker(DeviceWorker):
         else:
             if not self._connected:
                 print(
-                    "Device may not be connected.\nInitialization function can't find Nucleo L432KC with VID: 0x0483 and PID: 0x374B at any COM port."
+                    "Device may not be connected.\nInitialization function can't find Nucleo L432KC / F303K8 with VID: 0x0483 and PID: 0x374B at any COM port."
                 )
 
     def status(self):
