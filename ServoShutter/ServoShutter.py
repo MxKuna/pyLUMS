@@ -3,14 +3,13 @@ from time import sleep, time
 
 import serial
 import serial.tools.list_ports
-from PyQt5 import QtCore, QtWidgets
-
 from devices.zeromq_device import (
     DeviceOverZeroMQ,
     DeviceWorker,
     include_remote_methods,
     remote,
 )
+from PyQt5 import QtCore, QtWidgets
 
 
 class ShutterWorker(DeviceWorker):
@@ -54,6 +53,13 @@ class ShutterWorker(DeviceWorker):
             }
             for i in range(4)
         }
+
+        # Background polling for status
+        self._status_cache = {}
+        self._cache_lock = threading.Lock()
+        self._polling_thread = None
+        self._polling_active = False
+        self._polling_interval = 0.2  # Poll every 200ms
 
     def _calculate_checksum(self, length, cmd, data):
         """Calculate XOR checksum"""
@@ -132,6 +138,57 @@ class ShutterWorker(DeviceWorker):
 
         return {"cmd": cmd, "data": data, "length": length}
 
+    def _background_polling_loop(self):
+        """Background thread that continuously polls servo positions"""
+        while self._polling_active:
+            if not self._connected:
+                sleep(0.5)
+                continue
+
+            try:
+                with self._command_lock:
+                    self.comp.reset_input_buffer()
+                    self._send_packet(self.CMD_GET_ALL, b"")
+                    pkt = self._receive_packet(timeout=0.15)
+
+                    if pkt and pkt["cmd"] == self.CMD_GET_ALL and pkt["length"] == 8:
+                        # Update cache
+                        cache_update = {}
+                        for i in range(4):
+                            pw = (pkt["data"][i * 2] << 8) | pkt["data"][i * 2 + 1]
+                            settings = self.servo_settings[i]
+                            mid_point = (
+                                settings["closed_pw"] + settings["open_pw"]
+                            ) / 2
+                            cache_update[f"open{i + 1}"] = pw > mid_point
+                            cache_update[f"position{i + 1}"] = pw
+
+                        with self._cache_lock:
+                            self._status_cache.update(cache_update)
+            except Exception as e:
+                print(f"Background polling error: {e}")
+
+            sleep(self._polling_interval)
+
+    def _start_background_polling(self):
+        """Start the background polling thread"""
+        if self._polling_thread is None or not self._polling_thread.is_alive():
+            self._polling_active = True
+            self._polling_thread = threading.Thread(
+                target=self._background_polling_loop,
+                daemon=True,
+                name="ServoStatusPoller",
+            )
+            self._polling_thread.start()
+            print("Background servo polling started")
+
+    def _stop_background_polling(self):
+        """Stop the background polling thread"""
+        self._polling_active = False
+        if self._polling_thread and self._polling_thread.is_alive():
+            self._polling_thread.join(timeout=1.0)
+        print("Background servo polling stopped")
+
     def init_device(self):
         ports = list(serial.tools.list_ports.comports())
         for port in ports:
@@ -159,6 +216,11 @@ class ShutterWorker(DeviceWorker):
                                 self._connected = True
                             else:
                                 print("Ping failed")
+
+                    # Start background polling if connected
+                    if self._connected:
+                        self._start_background_polling()
+
                 except Exception as e:
                     print(f"Error initializing device: {e}")
                     self._connected = False
@@ -169,28 +231,15 @@ class ShutterWorker(DeviceWorker):
                 )
 
     def status(self):
+        """Non-blocking status method that returns cached values"""
         d = super().status()
+
         if not self._connected:
             return d
 
-        try:
-            with self._command_lock:
-                self.comp.reset_input_buffer()
-                self._send_packet(self.CMD_GET_ALL, b"")
-                pkt = self._receive_packet()
-
-                if pkt and pkt["cmd"] == self.CMD_GET_ALL and pkt["length"] == 8:
-                    for i in range(4):
-                        pw = (pkt["data"][i * 2] << 8) | pkt["data"][i * 2 + 1]
-                        settings = self.servo_settings[i]
-                        mid_point = (settings["closed_pw"] + settings["open_pw"]) / 2
-                        d[f"open{i + 1}"] = pw > mid_point
-                        d[f"position{i + 1}"] = pw
-                else:
-                    for i in range(4):
-                        d[f"open{i + 1}"] = self._state_internal(i)
-        except Exception as e:
-            print(f"Error getting status: {e}")
+        # Return cached values - no blocking serial communication
+        with self._cache_lock:
+            d.update(self._status_cache.copy())
 
         return d
 
@@ -227,197 +276,239 @@ class ShutterWorker(DeviceWorker):
             print("Device not connected")
             return
 
-        with self._command_lock:
-            for ax in axes:
-                servo_idx = ax - 1
-                settings = self.servo_settings[servo_idx]
+        if not axes:
+            axes = [1, 2, 3, 4]
 
-                if action == "close":
-                    pw = settings["closed_pw"]
-                elif action == "open":
-                    pw = settings["open_pw"]
-                else:
-                    print(f"Invalid action: {action}")
-                    continue
+        for ax in axes:
+            servo_idx = ax - 1
+            settings = self.servo_settings[servo_idx]
 
-                try:
-                    self.comp.reset_input_buffer()
-                    data = bytes([servo_idx, (pw >> 8) & 0xFF, pw & 0xFF])
-                    self._send_packet(self.CMD_SET_SERVO, data)
-                    pkt = self._receive_packet()
+            if action == "open":
+                target_pw = settings["open_pw"]
+            elif action == "close":
+                target_pw = settings["closed_pw"]
+            else:
+                print(f"Unknown action: {action}")
+                continue
 
-                    if not pkt or pkt["data"][0] != self.RESP_OK:
-                        print(f"Error moving servo {ax}")
+            with self._command_lock:
+                data = bytearray()
+                data.append(servo_idx)
+                data.append((target_pw >> 8) & 0xFF)
+                data.append(target_pw & 0xFF)
+
+                self._send_packet(self.CMD_SET_SERVO, bytes(data))
+                pkt = self._receive_packet()
+
+                if pkt and pkt["cmd"] == self.CMD_SET_SERVO:
+                    if pkt["data"][0] == self.RESP_OK:
+                        print(f"Servo {ax} moved to {action}")
                     else:
-                        print(f"Moved servo {ax} to {action}")
-                except Exception as e:
-                    print(f"Error moving servo {ax}: {e}")
+                        print(f"Error moving servo {ax}")
 
     @remote
     def move_stepped(self, action, *axes):
-        """Move servo with smooth stepping"""
+        """Move servo with stepped motion"""
         if not self._connected:
             print("Device not connected")
             return
 
-        with self._command_lock:
-            for ax in axes:
-                servo_idx = ax - 1
-                settings = self.servo_settings[servo_idx]
+        if not axes:
+            axes = [1, 2, 3, 4]
 
-                if action == "close":
-                    target_pw = settings["closed_pw"]
-                elif action == "open":
-                    target_pw = settings["open_pw"]
-                else:
-                    print(f"Invalid action: {action}")
-                    continue
+        for ax in axes:
+            servo_idx = ax - 1
+            settings = self.servo_settings[servo_idx]
 
-                target_deg = ((target_pw - 500) / 2000.0) * 180.0
-                target_deg_100 = int(target_deg * 100)
-                step_deg_100 = int(settings["step_deg"] * 100)
+            if action == "open":
+                target_pw = settings["open_pw"]
+            elif action == "close":
+                target_pw = settings["closed_pw"]
+            else:
+                print(f"Unknown action: {action}")
+                continue
 
-                if step_deg_100 > 255:
-                    print(
-                        f"Warning: Step size {settings['step_deg']}° exceeds max 2.5°"
-                    )
-                    step_deg_100 = 255
+            with self._command_lock:
+                data = bytearray()
+                data.append(servo_idx)
+                data.append((target_pw >> 8) & 0xFF)
+                data.append(target_pw & 0xFF)
 
-                try:
-                    self.comp.reset_input_buffer()
-                    data = bytes(
-                        [
-                            servo_idx,
-                            (target_deg_100 >> 8) & 0xFF,
-                            target_deg_100 & 0xFF,
-                            step_deg_100,
-                            (settings["step_delay_ms"] >> 8) & 0xFF,
-                            settings["step_delay_ms"] & 0xFF,
-                        ]
-                    )
-                    self._send_packet(self.CMD_MOVE_STEPPED, data)
-                    pkt = self._receive_packet()
+                step_deg_int = int(settings["step_deg"] * 10)
+                data.append(step_deg_int)
 
-                    if not pkt or pkt["data"][0] != self.RESP_OK:
-                        print(f"Error starting stepped move for servo {ax}")
+                delay_ms = settings["step_delay_ms"]
+                data.append((delay_ms >> 8) & 0xFF)
+                data.append(delay_ms & 0xFF)
+
+                self._send_packet(self.CMD_MOVE_STEPPED, bytes(data))
+                pkt = self._receive_packet()
+
+                if pkt and pkt["cmd"] == self.CMD_MOVE_STEPPED:
+                    if pkt["data"][0] == self.RESP_OK:
+                        print(f"Servo {ax} started stepped move to {action}")
                     else:
-                        print(f"Started stepped move for servo {ax}")
-                except Exception as e:
-                    print(f"Error with stepped move for servo {ax}: {e}")
+                        print(f"Error starting stepped move for servo {ax}")
 
     @remote
     def stop_move(self, *axes):
-        """Stop ongoing stepped movement"""
+        """Stop stepped motion on specified servos"""
         if not self._connected:
+            print("Device not connected")
             return
 
-        with self._command_lock:
-            for ax in axes:
-                servo_idx = ax - 1
-                try:
-                    self.comp.reset_input_buffer()
-                    data = bytes([servo_idx])
-                    self._send_packet(self.CMD_STOP_MOVE, data)
-                    self._receive_packet()
-                except Exception as e:
-                    print(f"Error stopping servo {ax}: {e}")
+        if not axes:
+            axes = [1, 2, 3, 4]
+
+        for ax in axes:
+            servo_idx = ax - 1
+
+            with self._command_lock:
+                data = bytes([servo_idx])
+                self._send_packet(self.CMD_STOP_MOVE, data)
+                pkt = self._receive_packet()
+
+                if pkt and pkt["cmd"] == self.CMD_STOP_MOVE:
+                    if pkt["data"][0] == self.RESP_OK:
+                        print(f"Servo {ax} motion stopped")
+                    else:
+                        print(f"Error stopping servo {ax}")
 
     @remote
-    def update_settings(self, servo_idx, **kwargs):
-        """Update settings for a servo (0-indexed)"""
-        for key, value in kwargs.items():
-            if key in self.servo_settings[servo_idx]:
-                self.servo_settings[servo_idx][key] = value
-        print(f"Updated settings for servo {servo_idx}: {kwargs}")
+    def update_settings(
+        self,
+        servo_idx,
+        closed_pw=None,
+        open_pw=None,
+        step_deg=None,
+        step_delay_ms=None,
+        name=None,
+    ):
+        """Update settings for a specific servo (0-indexed)"""
+        if servo_idx not in self.servo_settings:
+            print(f"Invalid servo index: {servo_idx}")
+            return
+
+        if closed_pw is not None:
+            self.servo_settings[servo_idx]["closed_pw"] = closed_pw
+        if open_pw is not None:
+            self.servo_settings[servo_idx]["open_pw"] = open_pw
+        if step_deg is not None:
+            self.servo_settings[servo_idx]["step_deg"] = step_deg
+        if step_delay_ms is not None:
+            self.servo_settings[servo_idx]["step_delay_ms"] = step_delay_ms
+        if name is not None:
+            self.servo_settings[servo_idx]["name"] = name
+
+        print(f"Updated settings for servo {servo_idx + 1}")
 
     @remote
     def get_settings(self, servo_idx):
-        """Get settings for a servo (0-indexed)"""
-        return self.servo_settings[servo_idx].copy()
+        """Get settings for a specific servo (0-indexed)"""
+        if servo_idx in self.servo_settings:
+            return self.servo_settings[servo_idx].copy()
+        return {}
 
-    @remote
-    def get_connected(self):
-        return self._connected
+    def close_device(self):
+        """Clean shutdown of the device"""
+        self._stop_background_polling()
+
+        if hasattr(self, "comp") and self.comp and self.comp.is_open:
+            try:
+                self.comp.close()
+                print("Serial connection closed")
+            except Exception as e:
+                print(f"Error closing serial connection: {e}")
+
+        self._connected = False
+
+    def __del__(self):
+        """Ensure cleanup on deletion"""
+        self.close_device()
 
 
-@include_remote_methods(ShutterWorker)
-class Shutter(DeviceOverZeroMQ):
-    def __init__(self, *args, use_stepped=True, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.use_stepped = use_stepped
+@include_remote_methods
+class ServoShutter(DeviceOverZeroMQ):
+    gui_allowed = True
 
-    def _generate_func(self, number):
-        def change_state(on):
-            if self.use_stepped:
-                if on:
-                    self.move_stepped("open", number)
-                else:
-                    self.move_stepped("close", number)
+    def __init__(self, *args, **kwargs):
+        super().__init__(ShutterWorker, *args, **kwargs)
+
+    def _generate_func(self, ax):
+        def func(checked):
+            if checked:
+                self.move_stepped("open", ax)
             else:
-                if on:
-                    self.move_immediate("open", number)
-                else:
-                    self.move_immediate("close", number)
+                self.move_stepped("close", ax)
 
-        return change_state
+        return func
 
-    def update_ui(self, status):
-        if self.get_connected():
+    def update_ui(self, new_status):
+        """Update UI based on status"""
+        try:
             for axis in [1, 2, 3, 4]:
-                try:
-                    state_key = f"open{axis}"
-                    if state_key in status:
-                        self.buttons[axis].setChecked(status[state_key])
-                    # Update label with custom name
-                    servo_idx = axis - 1
-                    settings = self.get_settings(servo_idx)
-                    self.servo_labels[axis].setText(
-                        settings.get("name", f"Servo {axis}")
-                    )
-                except Exception as e:
-                    print(f"Error updating status for axis {axis}: {e}")
-        else:
-            for axis in [1, 2, 3, 4]:
-                self.buttons[axis].setChecked(False)
-                self.buttons[axis].setEnabled(False)
+                key = f"open{axis}"
+                if key in new_status:
+                    self.buttons[axis].blockSignals(True)
+                    self.buttons[axis].setChecked(new_status[key])
+                    self.buttons[axis].setText("OPEN" if new_status[key] else "CLOSED")
+                    self.buttons[axis].blockSignals(False)
+        except Exception as e:
+            print(f"Error updating UI: {e}")
 
     def _show_help_dialog(self):
-        """Show help dialog with API commands"""
+        """Show API usage help dialog"""
+        help_text = """
+<h3>ServoShutter Remote API</h3>
+
+<p><b>Available methods:</b></p>
+
+<p><code>move_immediate(action, *axes)</code><br>
+Move servos immediately without stepping<br>
+Examples:<br>
+&nbsp;&nbsp;<code>device.move_immediate('open', 1, 2)</code><br>
+&nbsp;&nbsp;<code>device.move_immediate('close')</code> # all servos</p>
+
+<p><code>move_stepped(action, *axes)</code><br>
+Move servos with smooth stepped motion<br>
+Examples:<br>
+&nbsp;&nbsp;<code>device.move_stepped('open', 3)</code><br>
+&nbsp;&nbsp;<code>device.move_stepped('close', 1, 2, 3, 4)</code></p>
+
+<p><code>stop_move(*axes)</code><br>
+Stop ongoing stepped motion<br>
+Example:<br>
+&nbsp;&nbsp;<code>device.stop_move(1, 2)</code></p>
+
+<p><code>state(axis)</code><br>
+Get current state of a servo (True=open, False=closed)<br>
+Example:<br>
+&nbsp;&nbsp;<code>is_open = device.state(1)</code></p>
+
+<p><code>update_settings(servo_idx, **kwargs)</code><br>
+Update servo settings (servo_idx is 0-indexed)<br>
+Example:<br>
+&nbsp;&nbsp;<code>device.update_settings(0, closed_pw=1000, open_pw=2000)</code></p>
+
+<p><b>Parameters:</b></p>
+<ul>
+<li><code>action</code>: 'open' or 'close'</li>
+<li><code>axes</code>: Servo numbers (1-4), omit for all servos</li>
+</ul>
+        """
+
         dialog = QtWidgets.QDialog(self.dock)
-        dialog.setWindowTitle("API Commands")
-        dialog.setMinimumSize(500, 350)
+        dialog.setWindowTitle("API Help")
+        dialog.setMinimumWidth(500)
 
         layout = QtWidgets.QVBoxLayout()
-
-        text_edit = QtWidgets.QTextEdit()
-        text_edit.setReadOnly(True)
-
-        help_text = """<h3>Control</h3>
-<b>move_immediate(action, *axes)</b> - Instant move<br>
-<b>move_stepped(action, *axes)</b> - Smooth move<br>
-<b>stop_move(*axes)</b> - Stop movement<br>
-<b>state(axis)</b> - Get servo state (True=open)<br>
-<br>
-<i>action: "open" or "close", axes: 1-4</i>
-
-<h3>Settings</h3>
-<b>update_settings(servo_idx, **kwargs)</b><br>
-<i>servo_idx: 0-3, kwargs: closed_pw, open_pw, step_deg, step_delay_ms</i><br>
-<br>
-<b>get_settings(servo_idx)</b> - Get current settings<br>
-<b>get_connected()</b> - Check connection status
-
-<h3>Examples</h3>
-<code>device.move_stepped("open", 1, 2)</code><br>
-<code>device.update_settings(0, closed_pw=1000)</code><br>
-<code>is_open = device.state(1)</code>
-"""
-
-        text_edit.setHtml(help_text)
-        layout.addWidget(text_edit)
+        text_browser = QtWidgets.QTextBrowser()
+        text_browser.setHtml(help_text)
+        text_browser.setOpenExternalLinks(True)
+        layout.addWidget(text_browser)
 
         close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(dialog.accept)
+        close_btn.clicked.connect(dialog.close)
         layout.addWidget(close_btn)
 
         dialog.setLayout(layout)
