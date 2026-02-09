@@ -485,19 +485,6 @@ class Shutter(DeviceOverZeroMQ):
         main_layout = QtWidgets.QVBoxLayout()
         widget.setLayout(main_layout)
 
-        # Header
-        header_layout = QtWidgets.QHBoxLayout()
-        header_layout.addStretch()
-
-        help_btn = QtWidgets.QPushButton("?")
-        help_btn.setFixedSize(25, 25)
-        help_btn.setStyleSheet(
-            "border-radius: 12px; background-color: #2196F3; color: white; font-weight: bold; border: none;"
-        )
-        help_btn.clicked.connect(self._show_help_dialog)
-        header_layout.addWidget(help_btn)
-        main_layout.addLayout(header_layout)
-
         # Tab widget
         tabs = QtWidgets.QTabWidget()
         main_layout.addWidget(tabs)
