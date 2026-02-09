@@ -487,8 +487,6 @@ class Shutter(DeviceOverZeroMQ):
 
         # Header
         header_layout = QtWidgets.QHBoxLayout()
-        header_label = QtWidgets.QLabel("<b>Servo Shutter Control</b>")
-        header_layout.addWidget(header_label)
         header_layout.addStretch()
 
         help_btn = QtWidgets.QPushButton("?")
@@ -512,19 +510,19 @@ class Shutter(DeviceOverZeroMQ):
         self.buttons = {}
         self.servo_labels = {}
 
-        # 2x2 Grid for buttons
-        grid_layout = QtWidgets.QGridLayout()
-        grid_layout.setSpacing(10)
+        # Vertical stack of button rows (2 rows, 2 buttons each)
+        buttons_layout = QtWidgets.QVBoxLayout()
+        buttons_layout.setSpacing(8)
 
-        for axis in [1, 2, 3, 4]:
-            # Calculate grid position (0,0), (0,1), (1,0), (1,1)
-            row = (axis - 1) // 2
-            col = (axis - 1) % 2
+        # Row 1: Servos 1 and 2
+        row1_layout = QtWidgets.QHBoxLayout()
+        row1_layout.setSpacing(8)
 
+        for axis in [1, 2]:
             container = QtWidgets.QWidget()
             v_layout = QtWidgets.QVBoxLayout()
             v_layout.setContentsMargins(0, 0, 0, 0)
-            v_layout.setAlignment(QtCore.Qt.AlignCenter)
+            v_layout.setSpacing(2)
             container.setLayout(v_layout)
 
             label = QtWidgets.QLabel(f"Servo {axis}")
@@ -537,10 +535,12 @@ class Shutter(DeviceOverZeroMQ):
             button.setCheckable(True)
             button.clicked.connect(self._generate_func(axis))
 
-            # Constraint: Max 50x50
-            button.setFixedSize(50, 50)
-
-            # Updated style for square buttons
+            # Stretch horizontally, compact vertically
+            button.setMinimumHeight(35)
+            button.setMaximumHeight(50)
+            button.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
             button.setStyleSheet("""
                 QPushButton {
                     border: 2px solid #666;
@@ -560,16 +560,68 @@ class Shutter(DeviceOverZeroMQ):
             self.buttons[axis] = button
             v_layout.addWidget(button)
 
-            grid_layout.addWidget(container, row, col)
+            row1_layout.addWidget(container)
 
-        control_layout.addLayout(grid_layout)
+        buttons_layout.addLayout(row1_layout)
+
+        # Row 2: Servos 3 and 4
+        row2_layout = QtWidgets.QHBoxLayout()
+        row2_layout.setSpacing(8)
+
+        for axis in [3, 4]:
+            container = QtWidgets.QWidget()
+            v_layout = QtWidgets.QVBoxLayout()
+            v_layout.setContentsMargins(0, 0, 0, 0)
+            v_layout.setSpacing(2)
+            container.setLayout(v_layout)
+
+            label = QtWidgets.QLabel(f"Servo {axis}")
+            label.setAlignment(QtCore.Qt.AlignCenter)
+            label.setStyleSheet("font-weight: bold; font-size: 11px;")
+            self.servo_labels[axis] = label
+            v_layout.addWidget(label)
+
+            button = QtWidgets.QPushButton()
+            button.setCheckable(True)
+            button.clicked.connect(self._generate_func(axis))
+
+            # Stretch horizontally, compact vertically
+            button.setMinimumHeight(35)
+            button.setMaximumHeight(50)
+            button.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+            )
+            button.setStyleSheet("""
+                QPushButton {
+                    border: 2px solid #666;
+                    border-radius: 5px;
+                    background-color: #f44336;
+                    color: white;
+                    font-weight: bold;
+                }
+                QPushButton:checked {
+                    background-color: #4CAF50;
+                }
+                QPushButton:hover {
+                    border: 2px solid #333;
+                }
+            """)
+
+            self.buttons[axis] = button
+            v_layout.addWidget(button)
+
+            row2_layout.addWidget(container)
+
+        buttons_layout.addLayout(row2_layout)
+
+        control_layout.addLayout(buttons_layout)
         control_layout.addStretch()  # Push grid to top
         tabs.addTab(control_widget, "Control")
 
         # --- Settings Tab ---
         settings_widget = QtWidgets.QWidget()
         settings_layout = QtWidgets.QVBoxLayout()
-        settings_layout.setContentsMargins(5, 5, 5, 5)
+        settings_layout.setContentsMargins(2, 2, 2, 2)
         settings_layout.setSpacing(8)
         settings_widget.setLayout(settings_layout)
 
