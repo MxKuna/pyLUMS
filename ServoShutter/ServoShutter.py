@@ -9,7 +9,7 @@ from devices.zeromq_device import (
     include_remote_methods,
     remote,
 )
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 
 class ShutterWorker(DeviceWorker):
@@ -428,7 +428,7 @@ class Shutter(DeviceOverZeroMQ):
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn)
         dialog.setLayout(layout)
-        dialog.exec_()
+        dialog.exec()  # Qt6: exec() instead of exec_()
 
     def _update_settings_from_ui(self):
         """Update settings from UI controls"""
@@ -513,7 +513,9 @@ class Shutter(DeviceOverZeroMQ):
             container.setLayout(v_layout)
 
             label = QtWidgets.QLabel(f"Servo {axis}")
-            label.setAlignment(QtCore.Qt.AlignCenter)
+            label.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignCenter
+            )  # Qt6: Explicit enum
             label.setStyleSheet("font-weight: bold; font-size: 11px;")
             self.servo_labels[axis] = label
             v_layout.addWidget(label)
@@ -526,7 +528,8 @@ class Shutter(DeviceOverZeroMQ):
             button.setMinimumHeight(35)
             button.setMaximumHeight(50)
             button.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,  # Qt6: Explicit enum
             )
             button.setStyleSheet("""
                 QPushButton {
@@ -563,7 +566,9 @@ class Shutter(DeviceOverZeroMQ):
             container.setLayout(v_layout)
 
             label = QtWidgets.QLabel(f"Servo {axis}")
-            label.setAlignment(QtCore.Qt.AlignCenter)
+            label.setAlignment(
+                QtCore.Qt.AlignmentFlag.AlignCenter
+            )  # Qt6: Explicit enum
             label.setStyleSheet("font-weight: bold; font-size: 11px;")
             self.servo_labels[axis] = label
             v_layout.addWidget(label)
@@ -576,7 +581,8 @@ class Shutter(DeviceOverZeroMQ):
             button.setMinimumHeight(35)
             button.setMaximumHeight(50)
             button.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed
+                QtWidgets.QSizePolicy.Policy.Expanding,
+                QtWidgets.QSizePolicy.Policy.Fixed,  # Qt6: Explicit enum
             )
             button.setStyleSheet("""
                 QPushButton {
@@ -627,8 +633,8 @@ class Shutter(DeviceOverZeroMQ):
             self.servo_radios.append(rbtn)
             radio_layout.addWidget(rbtn)
 
-        # Connect group signal
-        self.servo_group.buttonClicked[int].connect(self._switch_servo)
+        # Connect group signal - Qt6 uses idClicked instead of buttonClicked[int]
+        self.servo_group.idClicked.connect(self._switch_servo)
 
         settings_layout.addLayout(radio_layout)
 
@@ -696,9 +702,12 @@ class Shutter(DeviceOverZeroMQ):
 
         self.dock.setWidget(widget)
         self.dock.setAllowedAreas(
-            QtCore.Qt.TopDockWidgetArea | QtCore.Qt.BottomDockWidgetArea
+            QtCore.Qt.DockWidgetArea.TopDockWidgetArea
+            | QtCore.Qt.DockWidgetArea.BottomDockWidgetArea  # Qt6: Explicit enum
         )
-        parentWidget.addDockWidget(QtCore.Qt.TopDockWidgetArea, self.dock)
+        parentWidget.addDockWidget(
+            QtCore.Qt.DockWidgetArea.TopDockWidgetArea, self.dock
+        )  # Qt6: Explicit enum
         if menu:
             menu.addAction(self.dock.toggleViewAction())
 
