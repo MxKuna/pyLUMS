@@ -52,7 +52,7 @@ class ShutterWorker(DeviceWorker):
             i: {
                 "closed_pw": 1000,
                 "open_pw": 1500,
-                "step_deg": 1.0,
+                "step_deg": 5.0,
                 "step_delay_ms": 15,
                 "name": f"Servo {i + 1}",
             }
@@ -413,24 +413,6 @@ class Shutter(DeviceOverZeroMQ):
                 self.buttons[axis].setChecked(False)
                 self.buttons[axis].setEnabled(False)
                 self.buttons[axis].setText(f"Servo {axis}")
-
-    def _show_help_dialog(self):
-        """Show help dialog with API commands"""
-        dialog = QtWidgets.QDialog(self.dock)
-        dialog.setWindowTitle("API Commands")
-        dialog.setMinimumSize(500, 350)
-
-        layout = QtWidgets.QVBoxLayout()
-        text_edit = QtWidgets.QTextEdit()
-        text_edit.setReadOnly(True)
-        help_text = """<h3>Control</h3>... (same as before) ..."""
-        text_edit.setHtml(help_text)
-        layout.addWidget(text_edit)
-        close_btn = QtWidgets.QPushButton("Close")
-        close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn)
-        dialog.setLayout(layout)
-        dialog.exec()
 
     def _update_settings_from_ui(self):
         """Update settings from UI controls"""
