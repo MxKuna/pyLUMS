@@ -548,11 +548,11 @@ class Shutter(DeviceOverZeroMQ):
             """)
 
             self.buttons[axis] = button
-            v_layout.addWidget(button)
+            v_layout.addWidget(button, 1)
 
-            row1_layout.addWidget(container)
+            row1_layout.addWidget(container, 1)
 
-        buttons_layout.addLayout(row1_layout)
+        buttons_layout.addLayout(row1_layout, 1)
 
         # Row 2: Servos 3 and 4
         row2_layout = QtWidgets.QHBoxLayout()
@@ -578,11 +578,9 @@ class Shutter(DeviceOverZeroMQ):
             button.clicked.connect(self._generate_func(axis))
 
             # Stretch horizontally, compact vertically
-            button.setMinimumHeight(35)
-            button.setMaximumHeight(50)
             button.setSizePolicy(
                 QtWidgets.QSizePolicy.Policy.Expanding,
-                QtWidgets.QSizePolicy.Policy.Fixed,  # Qt6: Explicit enum
+                QtWidgets.QSizePolicy.Policy.Expanding,
             )
             button.setStyleSheet("""
                 QPushButton {
@@ -603,12 +601,12 @@ class Shutter(DeviceOverZeroMQ):
             self.buttons[axis] = button
             v_layout.addWidget(button)
 
-            row2_layout.addWidget(container)
+            row2_layout.addWidget(container, 1)
 
-        buttons_layout.addLayout(row2_layout)
+        buttons_layout.addLayout(row2_layout, 1)
 
-        control_layout.addLayout(buttons_layout)
-        control_layout.addStretch()  # Push grid to top
+        control_layout.addLayout(buttons_layout, 1)
+        # control_layout.addStretch()  # Push grid to top
         tabs.addTab(control_widget, "Control")
 
         # --- Settings Tab ---
