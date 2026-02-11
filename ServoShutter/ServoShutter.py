@@ -400,17 +400,19 @@ class Shutter(DeviceOverZeroMQ):
                     state_key = f"open{axis}"
                     if state_key in status:
                         self.buttons[axis].setChecked(status[state_key])
-                    # Update label with custom name (also update radio button text if needed)
+                    # Update button text with custom name
                     servo_idx = axis - 1
                     settings = self.get_settings(servo_idx)
                     name = settings.get("name", f"Servo {axis}")
-                    self.servo_labels[axis].setText(name)
+                    self.buttons[axis].setText(name)
+                    self.buttons[axis].setEnabled(True)
                 except Exception as e:
                     print(f"Error updating status for axis {axis}: {e}")
         else:
             for axis in [1, 2, 3, 4]:
                 self.buttons[axis].setChecked(False)
                 self.buttons[axis].setEnabled(False)
+                self.buttons[axis].setText(f"Servo {axis}")
 
     def _show_help_dialog(self):
         """Show help dialog with API commands"""
@@ -428,7 +430,7 @@ class Shutter(DeviceOverZeroMQ):
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn)
         dialog.setLayout(layout)
-        dialog.exec()  # Qt6: exec() instead of exec_()
+        dialog.exec()
 
     def _update_settings_from_ui(self):
         """Update settings from UI controls"""
@@ -452,8 +454,8 @@ class Shutter(DeviceOverZeroMQ):
                 name=name,
             )
 
-            # Update the label in control tab
-            self.servo_labels[servo_idx + 1].setText(name)
+            # Update the button text in control tab
+            self.buttons[servo_idx + 1].setText(name)
         except Exception as e:
             print(f"Error updating settings: {e}")
 
@@ -483,216 +485,184 @@ class Shutter(DeviceOverZeroMQ):
         self.dock = QtWidgets.QDockWidget("ServoShutter", parentWidget)
         widget = QtWidgets.QWidget(parentWidget)
         main_layout = QtWidgets.QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         widget.setLayout(main_layout)
 
-        # Tab widget
+        # Tab widget - expandable
         tabs = QtWidgets.QTabWidget()
-        main_layout.addWidget(tabs)
+        tabs.setDocumentMode(True)
+        main_layout.addWidget(tabs, 1)  # Stretch factor 1
 
         # --- Control Tab ---
         control_widget = QtWidgets.QWidget()
         control_layout = QtWidgets.QVBoxLayout()
+        control_layout.setContentsMargins(4, 4, 4, 4)
+        control_layout.setSpacing(4)
         control_widget.setLayout(control_layout)
 
         self.buttons = {}
-        self.servo_labels = {}
 
-        # Vertical stack of button rows (2 rows, 2 buttons each)
-        buttons_layout = QtWidgets.QVBoxLayout()
-        buttons_layout.setSpacing(8)
+        # Grid layout for 2x2 button grid
+        grid_layout = QtWidgets.QGridLayout()
+        grid_layout.setSpacing(4)
 
-        # Row 1: Servos 1 and 2
-        row1_layout = QtWidgets.QHBoxLayout()
-        row1_layout.setSpacing(8)
+        for idx, axis in enumerate([1, 2, 3, 4]):
+            row = idx // 2
+            col = idx % 2
 
-        for axis in [1, 2]:
-            container = QtWidgets.QWidget()
-            v_layout = QtWidgets.QVBoxLayout()
-            v_layout.setContentsMargins(0, 0, 0, 0)
-            v_layout.setSpacing(2)
-            container.setLayout(v_layout)
-
-            label = QtWidgets.QLabel(f"Servo {axis}")
-            label.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignCenter
-            )  # Qt6: Explicit enum
-            label.setStyleSheet("font-weight: bold; font-size: 11px;")
-            self.servo_labels[axis] = label
-            v_layout.addWidget(label)
-
-            button = QtWidgets.QPushButton()
+            button = QtWidgets.QPushButton(f"Servo {axis}")
             button.setCheckable(True)
             button.clicked.connect(self._generate_func(axis))
 
-            # Stretch horizontally, compact vertically
-            button.setMinimumHeight(35)
-            button.setMaximumHeight(50)
-            button.setSizePolicy(
-                QtWidgets.QSizePolicy.Policy.Expanding,
-                QtWidgets.QSizePolicy.Policy.Fixed,  # Qt6: Explicit enum
-            )
-            button.setStyleSheet("""
-                QPushButton {
-                    border: 2px solid #666;
-                    border-radius: 5px;
-                    background-color: #f44336;
-                    color: white;
-                    font-weight: bold;
-                }
-                QPushButton:checked {
-                    background-color: #4CAF50;
-                }
-                QPushButton:hover {
-                    border: 2px solid #333;
-                }
-            """)
-
-            self.buttons[axis] = button
-            v_layout.addWidget(button, 1)
-
-            row1_layout.addWidget(container, 1)
-
-        buttons_layout.addLayout(row1_layout, 1)
-
-        # Row 2: Servos 3 and 4
-        row2_layout = QtWidgets.QHBoxLayout()
-        row2_layout.setSpacing(8)
-
-        for axis in [3, 4]:
-            container = QtWidgets.QWidget()
-            v_layout = QtWidgets.QVBoxLayout()
-            v_layout.setContentsMargins(0, 0, 0, 0)
-            v_layout.setSpacing(2)
-            container.setLayout(v_layout)
-
-            label = QtWidgets.QLabel(f"Servo {axis}")
-            label.setAlignment(
-                QtCore.Qt.AlignmentFlag.AlignCenter
-            )  # Qt6: Explicit enum
-            label.setStyleSheet("font-weight: bold; font-size: 11px;")
-            self.servo_labels[axis] = label
-            v_layout.addWidget(label)
-
-            button = QtWidgets.QPushButton()
-            button.setCheckable(True)
-            button.clicked.connect(self._generate_func(axis))
-
-            # Stretch horizontally, compact vertically
+            # Fully expandable in both directions
             button.setSizePolicy(
                 QtWidgets.QSizePolicy.Policy.Expanding,
                 QtWidgets.QSizePolicy.Policy.Expanding,
             )
+
+            # Large bold text centered
             button.setStyleSheet("""
                 QPushButton {
-                    border: 2px solid #666;
-                    border-radius: 5px;
+                    border: 3px solid #666;
+                    border-radius: 8px;
                     background-color: #f44336;
                     color: white;
                     font-weight: bold;
+                    font-size: 14px;
                 }
                 QPushButton:checked {
                     background-color: #4CAF50;
+                    border: 3px solid #2E7D32;
                 }
                 QPushButton:hover {
-                    border: 2px solid #333;
+                    border: 3px solid #333;
+                }
+                QPushButton:disabled {
+                    background-color: #9E9E9E;
+                    color: #E0E0E0;
                 }
             """)
 
             self.buttons[axis] = button
-            v_layout.addWidget(button)
+            grid_layout.addWidget(button, row, col)
 
-            row2_layout.addWidget(container, 1)
+        # Make grid rows and columns stretch equally
+        grid_layout.setRowStretch(0, 1)
+        grid_layout.setRowStretch(1, 1)
+        grid_layout.setColumnStretch(0, 1)
+        grid_layout.setColumnStretch(1, 1)
 
-        buttons_layout.addLayout(row2_layout, 1)
-
-        control_layout.addLayout(buttons_layout, 1)
-        # control_layout.addStretch()  # Push grid to top
+        control_layout.addLayout(grid_layout, 1)  # Stretch factor 1
         tabs.addTab(control_widget, "Control")
 
         # --- Settings Tab ---
         settings_widget = QtWidgets.QWidget()
         settings_layout = QtWidgets.QVBoxLayout()
-        settings_layout.setContentsMargins(2, 2, 2, 2)
-        settings_layout.setSpacing(8)
+        settings_layout.setContentsMargins(8, 8, 8, 8)
+        settings_layout.setSpacing(6)
         settings_widget.setLayout(settings_layout)
 
         self.current_servo_idx = 0
 
-        # Radio buttons for servo selection
+        # Radio buttons for servo selection - compact horizontal layout
+        radio_container = QtWidgets.QWidget()
         radio_layout = QtWidgets.QHBoxLayout()
+        radio_layout.setContentsMargins(0, 0, 0, 0)
+        radio_layout.setSpacing(4)
+        radio_container.setLayout(radio_layout)
+
         self.servo_group = QtWidgets.QButtonGroup()
         self.servo_radios = []
 
         for i in range(4):
-            rbtn = QtWidgets.QRadioButton(f"Servo {i + 1}")
+            rbtn = QtWidgets.QRadioButton(f"S{i + 1}")
             if i == 0:
                 rbtn.setChecked(True)
             self.servo_group.addButton(rbtn, i)
             self.servo_radios.append(rbtn)
             radio_layout.addWidget(rbtn)
 
-        # Connect group signal - Qt6 uses idClicked instead of buttonClicked[int]
+        radio_layout.addStretch(1)
+        settings_layout.addWidget(radio_container)
+
+        # Connect group signal
         self.servo_group.idClicked.connect(self._switch_servo)
 
-        settings_layout.addLayout(radio_layout)
+        # Settings form - using grid for compact layout
+        form_container = QtWidgets.QWidget()
+        form_layout = QtWidgets.QGridLayout()
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(6)
+        form_container.setLayout(form_layout)
 
-        # Compact Settings Form
-        form_layout = QtWidgets.QVBoxLayout()
-
-        # Row 1: Name
-        name_layout = QtWidgets.QHBoxLayout()
-        name_layout.addWidget(QtWidgets.QLabel("Name:"))
+        # Row 0: Name
+        form_layout.addWidget(QtWidgets.QLabel("Name:"), 0, 0)
         self.name_input = QtWidgets.QLineEdit()
         self.name_input.setPlaceholderText("e.g., Front Left")
-        name_layout.addWidget(self.name_input)
-        form_layout.addLayout(name_layout)
+        form_layout.addWidget(self.name_input, 0, 1, 1, 3)
 
-        # Row 2: Positions (Closed & Open)
-        pos_layout = QtWidgets.QHBoxLayout()
-
-        pos_layout.addWidget(QtWidgets.QLabel("Closed:"))
+        # Row 1: Closed/Open positions
+        form_layout.addWidget(QtWidgets.QLabel("Closed:"), 1, 0)
         self.closed_pw_spinbox = QtWidgets.QSpinBox()
         self.closed_pw_spinbox.setRange(500, 2500)
         self.closed_pw_spinbox.setSuffix(" μs")
-        pos_layout.addWidget(self.closed_pw_spinbox)
+        form_layout.addWidget(self.closed_pw_spinbox, 1, 1)
 
-        pos_layout.addSpacing(10)
-
-        pos_layout.addWidget(QtWidgets.QLabel("Open:"))
+        form_layout.addWidget(QtWidgets.QLabel("Open:"), 1, 2)
         self.open_pw_spinbox = QtWidgets.QSpinBox()
         self.open_pw_spinbox.setRange(500, 2500)
         self.open_pw_spinbox.setSuffix(" μs")
-        pos_layout.addWidget(self.open_pw_spinbox)
+        form_layout.addWidget(self.open_pw_spinbox, 1, 3)
 
-        form_layout.addLayout(pos_layout)
-
-        # Row 3: Steps (Size & Delay)
-        step_layout = QtWidgets.QHBoxLayout()
-
-        step_layout.addWidget(QtWidgets.QLabel("Step Size:"))
+        # Row 2: Step settings
+        form_layout.addWidget(QtWidgets.QLabel("Step:"), 2, 0)
         self.step_deg_spinbox = QtWidgets.QDoubleSpinBox()
         self.step_deg_spinbox.setRange(0.1, 25.5)
         self.step_deg_spinbox.setSingleStep(0.1)
         self.step_deg_spinbox.setSuffix(" °")
-        step_layout.addWidget(self.step_deg_spinbox)
+        form_layout.addWidget(self.step_deg_spinbox, 2, 1)
 
-        step_layout.addSpacing(10)
-
-        step_layout.addWidget(QtWidgets.QLabel("Delay:"))
+        form_layout.addWidget(QtWidgets.QLabel("Delay:"), 2, 2)
         self.step_delay_spinbox = QtWidgets.QSpinBox()
         self.step_delay_spinbox.setRange(1, 1000)
         self.step_delay_spinbox.setSuffix(" ms")
-        step_layout.addWidget(self.step_delay_spinbox)
+        form_layout.addWidget(self.step_delay_spinbox, 2, 3)
 
-        form_layout.addLayout(step_layout)
+        # Set column stretches for form
+        form_layout.setColumnStretch(0, 0)
+        form_layout.setColumnStretch(1, 1)
+        form_layout.setColumnStretch(2, 0)
+        form_layout.setColumnStretch(3, 1)
 
-        settings_layout.addLayout(form_layout)
+        settings_layout.addWidget(form_container)
 
+        # Apply button - stretchable height
         apply_btn = QtWidgets.QPushButton("Apply Settings")
+        apply_btn.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Expanding,
+        )
+        apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+                border: 2px solid #1976D2;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """)
         apply_btn.clicked.connect(self._update_settings_from_ui)
-        settings_layout.addWidget(apply_btn)
+        settings_layout.addWidget(apply_btn, 1)  # Stretch factor 1
 
-        settings_layout.addStretch()
+        settings_layout.addStretch(0)  # Minimal stretch to push content up
         tabs.addTab(settings_widget, "Settings")
 
         # Load initial settings
@@ -701,11 +671,11 @@ class Shutter(DeviceOverZeroMQ):
         self.dock.setWidget(widget)
         self.dock.setAllowedAreas(
             QtCore.Qt.DockWidgetArea.TopDockWidgetArea
-            | QtCore.Qt.DockWidgetArea.BottomDockWidgetArea  # Qt6: Explicit enum
+            | QtCore.Qt.DockWidgetArea.BottomDockWidgetArea
         )
         parentWidget.addDockWidget(
             QtCore.Qt.DockWidgetArea.TopDockWidgetArea, self.dock
-        )  # Qt6: Explicit enum
+        )
         if menu:
             menu.addAction(self.dock.toggleViewAction())
 
