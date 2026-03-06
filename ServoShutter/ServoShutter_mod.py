@@ -1,3 +1,23 @@
+"""
+ServoShutter - Configurable Multi-Servo Controller
+
+MODIFICATIONS:
+- Added servo_count parameter: specify how many servos to control (default: 4)
+- Added pins parameter: specify which hardware pins (1-4) the servos are connected to
+- UI dynamically adapts to show only configured servos
+- All internal logic properly maps between UI indices, internal indices, and hardware pins
+
+USAGE EXAMPLES:
+    # Default: 4 servos on pins 1, 2, 3, 4
+    worker = ShutterWorker(...)
+
+    # 3 servos on pins 1, 2, 4 (skipping pin 3)
+    worker = ShutterWorker(..., servo_count=3, pins=[1, 2, 4])
+
+    # 2 servos on pins 2 and 4
+    worker = ShutterWorker(..., servo_count=2, pins=[2, 4])
+"""
+
 import threading
 from time import sleep, time
 
@@ -438,6 +458,14 @@ class ShutterWorker(DeviceWorker):
     def get_connected(self):
         return self._connected
 
+    @remote
+    def get_servo_count(self):
+        return self.servo_count
+
+    @remote
+    def get_pins(self):
+        return self.pins.copy()
+
 
 @include_remote_methods(ShutterWorker)
 class Shutter(DeviceOverZeroMQ):
@@ -463,7 +491,8 @@ class Shutter(DeviceOverZeroMQ):
     def update_ui(self, status):
         if self.get_connected():
             # Only update configured servos
-            for idx, pin in enumerate(self.worker.pins):
+            pins = self.get_pins()
+            for idx, pin in enumerate(pins):
                 try:
                     state_key = f"open{pin}"
                     if state_key in status:
@@ -477,7 +506,8 @@ class Shutter(DeviceOverZeroMQ):
                     print(f"Error updating status for pin {pin}: {e}")
         else:
             # Disable all configured servo buttons
-            for idx, pin in enumerate(self.worker.pins):
+            pins = self.get_pins()
+            for idx, pin in enumerate(pins):
                 self.buttons[pin].setChecked(False)
                 self.buttons[pin].setEnabled(False)
                 self.buttons[pin].setText(f"Servo {pin}")
@@ -486,7 +516,8 @@ class Shutter(DeviceOverZeroMQ):
         """Update settings from UI controls"""
         try:
             servo_idx = self.current_servo_idx
-            pin = self.worker.pins[servo_idx]
+            pins = self.get_pins()
+            pin = pins[servo_idx]
             closed_pw = int(self.closed_pw_spinbox.value())
             open_pw = int(self.open_pw_spinbox.value())
             step_deg = float(self.step_deg_spinbox.value())
@@ -514,7 +545,8 @@ class Shutter(DeviceOverZeroMQ):
         """Load current settings into UI"""
         try:
             servo_idx = self.current_servo_idx
-            pin = self.worker.pins[servo_idx]
+            pins = self.get_pins()
+            pin = pins[servo_idx]
             settings = self.get_settings(servo_idx)
             self.closed_pw_spinbox.setValue(settings["closed_pw"])
             self.open_pw_spinbox.setValue(settings["open_pw"])
@@ -560,10 +592,12 @@ class Shutter(DeviceOverZeroMQ):
         grid_layout.setSpacing(4)
 
         # Calculate grid dimensions (prefer 2 columns)
-        n_cols = min(2, self.worker.servo_count)
-        n_rows = (self.worker.servo_count + n_cols - 1) // n_cols
+        servo_count = self.get_servo_count()
+        pins = self.get_pins()
+        n_cols = min(2, servo_count)
+        n_rows = (servo_count + n_cols - 1) // n_cols
 
-        for idx, pin in enumerate(self.worker.pins):
+        for idx, pin in enumerate(pins):
             row = idx // n_cols
             col = idx % n_cols
 
@@ -631,7 +665,8 @@ class Shutter(DeviceOverZeroMQ):
         self.servo_group = QtWidgets.QButtonGroup()
         self.servo_radios = []
 
-        for idx, pin in enumerate(self.worker.pins):
+        pins = self.get_pins()
+        for idx, pin in enumerate(pins):
             rbtn = QtWidgets.QRadioButton(f"S{pin}")
             if idx == 0:
                 rbtn.setChecked(True)
