@@ -1,23 +1,3 @@
-"""
-ServoShutter - Configurable Multi-Servo Controller
-
-MODIFICATIONS:
-- Added servo_count parameter: specify how many servos to control (default: 4)
-- Added pins parameter: specify which hardware pins (1-4) the servos are connected to
-- UI dynamically adapts to show only configured servos
-- All internal logic properly maps between UI indices, internal indices, and hardware pins
-
-USAGE EXAMPLES:
-    # Default: 4 servos on pins 1, 2, 3, 4
-    worker = ShutterWorker(...)
-
-    # 3 servos on pins 1, 2, 4 (skipping pin 3)
-    worker = ShutterWorker(..., servo_count=3, pins=[1, 2, 4])
-
-    # 2 servos on pins 2 and 4
-    worker = ShutterWorker(..., servo_count=2, pins=[2, 4])
-"""
-
 import threading
 from time import sleep, time
 
@@ -30,6 +10,8 @@ from devices.zeromq_device import (
     remote,
 )
 from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtCore import QEasingCurve
+from PyQt6_SwitchControl import SwitchControl
 
 
 class ShutterWorker(DeviceWorker):
@@ -40,8 +22,8 @@ class ShutterWorker(DeviceWorker):
         pid=[0x374B, 0x438],
         com=None,
         baud=115200,
-        servo_count=4,
-        pins=None,
+        servo_count=1,
+        pins=[4],
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -95,10 +77,10 @@ class ShutterWorker(DeviceWorker):
         # Settings (can be updated from UI) - only for configured servos
         self.servo_settings = {
             idx: {
-                "closed_pw": 1000,
-                "open_pw": 1500,
-                "step_deg": 5.0,
-                "step_delay_ms": 15,
+                "closed_pw": 900,
+                "open_pw": 1600,
+                "step_deg": 6.0,
+                "step_delay_ms": 12,
                 "name": f"Servo {pin}",
                 "pin": pin,
             }
@@ -494,23 +476,34 @@ class Shutter(DeviceOverZeroMQ):
             pins = self.get_pins()
             for idx, pin in enumerate(pins):
                 try:
+                    switch = self.buttons[pin]
+                    switch.setEnabled(True)
+
                     state_key = f"open{pin}"
                     if state_key in status:
-                        self.buttons[pin].setChecked(status[state_key])
-                    # Update button text with custom name
+                        # Block signal so programmatic update doesn't re-trigger move
+                        switch.blockSignals(True)
+                        switch.setChecked(status[state_key])
+                        switch.blockSignals(False)
+
+                    # Update label with custom name
                     settings = self.get_settings(idx)
                     name = settings.get("name", f"Servo {pin}")
-                    self.buttons[pin].setText(name)
-                    self.buttons[pin].setEnabled(True)
+                    if pin in self.button_labels:
+                        self.button_labels[pin].setText(name)
                 except Exception as e:
                     print(f"Error updating status for pin {pin}: {e}")
         else:
-            # Disable all configured servo buttons
+            # Disable all configured servo switches
             pins = self.get_pins()
             for idx, pin in enumerate(pins):
-                self.buttons[pin].setChecked(False)
-                self.buttons[pin].setEnabled(False)
-                self.buttons[pin].setText(f"Servo {pin}")
+                switch = self.buttons[pin]
+                switch.blockSignals(True)
+                switch.setChecked(False)
+                switch.blockSignals(False)
+                switch.setEnabled(False)
+                if pin in self.button_labels:
+                    self.button_labels[pin].setText(f"Servo {pin}")
 
     def _update_settings_from_ui(self):
         """Update settings from UI controls"""
@@ -536,8 +529,9 @@ class Shutter(DeviceOverZeroMQ):
                 name=name,
             )
 
-            # Update the button text in control tab
-            self.buttons[pin].setText(name)
+            # Update the label text in control tab
+            if pin in self.button_labels:
+                self.button_labels[pin].setText(name)
         except Exception as e:
             print(f"Error updating settings: {e}")
 
@@ -586,10 +580,11 @@ class Shutter(DeviceOverZeroMQ):
         control_widget.setLayout(control_layout)
 
         self.buttons = {}
+        self.button_labels = {}
 
         # Grid layout - dynamically sized based on servo_count
         grid_layout = QtWidgets.QGridLayout()
-        grid_layout.setSpacing(4)
+        grid_layout.setSpacing(8)
 
         # Calculate grid dimensions (prefer 2 columns)
         servo_count = self.get_servo_count()
@@ -601,41 +596,38 @@ class Shutter(DeviceOverZeroMQ):
             row = idx // n_cols
             col = idx % n_cols
 
-            button = QtWidgets.QPushButton(f"Servo {pin}")
-            button.setCheckable(True)
-            button.clicked.connect(self._generate_func(pin))
+            # Container: label above, switch below
+            cell_widget = QtWidgets.QWidget()
+            cell_layout = QtWidgets.QVBoxLayout()
+            cell_layout.setContentsMargins(4, 4, 4, 4)
+            cell_layout.setSpacing(4)
+            cell_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            cell_widget.setLayout(cell_layout)
 
-            # Fully expandable in both directions
-            button.setSizePolicy(
-                QtWidgets.QSizePolicy.Policy.Expanding,
-                QtWidgets.QSizePolicy.Policy.Expanding,
+            label = QtWidgets.QLabel(f"Servo {pin}")
+            label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("color: white; font-weight: bold; font-size: 13px;")
+            cell_layout.addWidget(label)
+
+            switch = SwitchControl(
+                bg_color="#f44336",
+                circle_color="#FFFFFF",
+                active_color="#4CAF50",
+                animation_curve=QEasingCurve.Type.OutBounce,
+                animation_duration=300,
+                checked=False,
+                change_cursor=True,
             )
+            switch.setEnabled(False)  # Disabled until device connects
+            switch.toggled.connect(self._generate_func(pin))
 
-            # Large bold text centered
-            button.setStyleSheet("""
-                QPushButton {
-                    border: 3px solid #666;
-                    border-radius: 8px;
-                    background-color: #f44336;
-                    color: white;
-                    font-weight: bold;
-                    font-size: 14px;
-                }
-                QPushButton:checked {
-                    background-color: #4CAF50;
-                    border: 3px solid #2E7D32;
-                }
-                QPushButton:hover {
-                    border: 3px solid #333;
-                }
-                QPushButton:disabled {
-                    background-color: #9E9E9E;
-                    color: #E0E0E0;
-                }
-            """)
+            cell_layout.addWidget(switch, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
 
-            self.buttons[pin] = button
-            grid_layout.addWidget(button, row, col)
+            # Store both switch and label so update_ui can update both
+            self.buttons[pin] = switch
+            self.button_labels[pin] = label
+
+            grid_layout.addWidget(cell_widget, row, col)
 
         # Make grid rows and columns stretch equally
         for row in range(n_rows):
