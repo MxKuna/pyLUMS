@@ -276,7 +276,9 @@ class ShutterWorker(DeviceWorker):
                 elif action == "open":
                     pw = settings["open_pw"]
                 else:
-                    print(f"Invalid action: {action}")
+                    print(
+                        f"Invalid action: {action};\nSyntax: move_immediate(action='open'/'close', *axes)"
+                    )
                     continue
 
                 try:
@@ -308,7 +310,9 @@ class ShutterWorker(DeviceWorker):
                 elif action == "open":
                     target_pw = settings["open_pw"]
                 else:
-                    print(f"Invalid action: {action}")
+                    print(
+                        f"Invalid action: {action};\nSyntax: move_stepped(action='open'/'close', *axes)"
+                    )
                     continue
 
                 target_deg = ((target_pw - 500) / 2000.0) * 180.0
